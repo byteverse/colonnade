@@ -28,10 +28,10 @@ instance Contravariant Headless where
 --   Check out @Control.Applicative.Free@ in the @free@ library to
 --   learn more about this.
 data Decoding f content a where
-  DecodingPure :: !a 
+  DecodingPure :: !a
                -> Decoding f content a
   DecodingAp :: !(f content)
-             -> !(content -> Either String a) 
+             -> !(content -> Either String a)
              -> !(Decoding f content (a -> b))
              -> Decoding f content b
 
@@ -44,17 +44,17 @@ instance Applicative (Decoding f content) where
   DecodingPure f <*> y = fmap f y
   DecodingAp h c y <*> z = DecodingAp h c (flip <$> y <*> z)
 
-newtype Encoding f content a = Encoding 
+newtype Encoding f content a = Encoding
   { getEncoding :: Vector (f content,a -> content) }
   deriving (Monoid)
 
 instance Contravariant (Encoding f content) where
-  contramap f (Encoding v) = Encoding 
+  contramap f (Encoding v) = Encoding
     (Vector.map (\(h,c) -> (h, c . f)) v)
 
 instance Divisible (Encoding f content) where
   conquer = Encoding Vector.empty
-  divide f (Encoding a) (Encoding b) = 
+  divide f (Encoding a) (Encoding b) =
     Encoding $ (Vector.++)
       (Vector.map (\(h,c) -> (h,c . fst . f)) a)
       (Vector.map (\(h,c) -> (h,c . snd . f)) b)

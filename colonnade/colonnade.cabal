@@ -19,7 +19,7 @@ library
     Colonnade.Encoding
     Colonnade.Decoding
     Colonnade.Internal.Ap
-  build-depends:       
+  build-depends:
       base >= 4.7 && < 5
     , contravariant
     , vector
