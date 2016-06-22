@@ -24,7 +24,7 @@ basic :: (MonadWidget t m, Foldable f)
       -> m ()
 basic tableAttrs as (Encoding v) = do
   elAttr "table" tableAttrs $ do
-    el "thead" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
+    el "thead" $ el "tr" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
       elAttr "th" attrs contents
     el "tbody" $ forM_ as $ \a -> do
       el "tr" $ forM_ v $ \(_,encode) -> do
@@ -38,7 +38,7 @@ dynamic :: (MonadWidget t m, Foldable f)
         -> m ()
 dynamic tableAttrs as (Encoding v) = do
   elAttr "table" tableAttrs $ do
-    el "thead" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
+    el "thead" $ el "tr" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
       elAttr "th" attrs contents
     el "tbody" $ forM_ as $ \a -> do
       el "tr" $ forM_ v $ \(_,encode) -> do
