@@ -8,7 +8,9 @@ module Colonnade.Types
   , Headed(..)
   , Headless(..)
   , Indexed(..)
-  , HeadingError(..)
+  , HeadingErrors(..)
+  , DecodingError(..)
+  , DecodingErrors(..)
   ) where
 
 import Data.Vector (Vector)
@@ -30,17 +32,32 @@ data Headless a = Headless
 newtype Indexed a = Indexed { getIndexed :: Int }
   deriving (Eq,Ord,Functor,Show,Read)
 
-data HeadingError content = HeadingError
-  { headingErrorMissing   :: Vector content -- ^ headers that were missing
-  , headingErrorDuplicate :: Vector (content,Int) -- ^ headers that occurred more than once
+data HeadingErrors content = HeadingErrors
+  { headingErrorsMissing   :: Vector content -- ^ headers that were missing
+  , headingErrorsDuplicate :: Vector (content,Int) -- ^ headers that occurred more than once
   } deriving (Show,Read)
 
-instance (Show content, Typeable content) => Exception (HeadingError content)
+instance (Show content, Typeable content) => Exception (HeadingErrors content)
 
-instance Monoid (HeadingError content) where
-  mempty = HeadingError Vector.empty Vector.empty
-  mappend (HeadingError a1 b1) (HeadingError a2 b2) = HeadingError
+instance Monoid (HeadingErrors content) where
+  mempty = HeadingErrors Vector.empty Vector.empty
+  mappend (HeadingErrors a1 b1) (HeadingErrors a2 b2) = HeadingErrors
     (a1 Vector.++ a2) (b1 Vector.++ b2)
+
+
+data DecodingError f content = DecodingError
+  { decodingErrorContent :: content
+  , decodingErrorHeader  :: f content
+  , decodingErrorMessage :: String
+  } -- deriving (Show,Read)
+
+-- instance (Show content, Typeable content) => Exception (DecodingError f content)
+
+newtype DecodingErrors f content = DecodingErrors
+  { getDecodingErrors :: Vector (DecodingError f content)
+  } deriving (Monoid)
+
+-- instance (Show content, Typeable content) => Exception (DecodingErrors f content)
 
 instance Contravariant Headless where
   contramap _ Headless = Headless
