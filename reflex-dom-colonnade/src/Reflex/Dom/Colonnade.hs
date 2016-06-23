@@ -24,10 +24,11 @@ basic :: (MonadWidget t m, Foldable f)
       -> m ()
 basic tableAttrs as (Encoding v) = do
   elAttr "table" tableAttrs $ do
-    el "thead" $ el "tr" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
-      elAttr "th" attrs contents
+    el "thead" $ el "tr" $
+      forM_ v $ \(OneEncoding (Headed (Cell attrs contents)) _) ->
+        elAttr "th" attrs contents
     el "tbody" $ forM_ as $ \a -> do
-      el "tr" $ forM_ v $ \(_,encode) -> do
+      el "tr" $ forM_ v $ \(OneEncoding _ encode) -> do
         let Cell attrs contents = encode a
         elAttr "td" attrs contents
 
@@ -38,10 +39,11 @@ dynamic :: (MonadWidget t m, Foldable f)
         -> m ()
 dynamic tableAttrs as (Encoding v) = do
   elAttr "table" tableAttrs $ do
-    el "thead" $ el "tr" $ forM_ v $ \(Headed (Cell attrs contents),_) ->
-      elAttr "th" attrs contents
+    el "thead" $ el "tr" $
+      forM_ v $ \(OneEncoding (Headed (Cell attrs contents)) _) ->
+        elAttr "th" attrs contents
     el "tbody" $ forM_ as $ \a -> do
-      el "tr" $ forM_ v $ \(_,encode) -> do
+      el "tr" $ forM_ v $ \(OneEncoding _ encode) -> do
         dynPair <- mapDyn encode a
         dynAttrs <- mapDyn cellAttrs dynPair
         dynContent <- mapDyn cellContents dynPair
