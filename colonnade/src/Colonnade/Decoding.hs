@@ -2,6 +2,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 module Colonnade.Decoding where
 
+import Colonnade.Internal (EitherWrap(..))
 import Colonnade.Types
 import Data.Functor.Contravariant
 import Data.Vector (Vector)
@@ -27,17 +28,17 @@ uncheckedRun :: forall content a.
                 Vector content
              -> Decoding Indexed content a
              -> Either (DecodingErrors Indexed content) a
-uncheckedRun v = go
+uncheckedRun v = getEitherWrap . go
   where
   go :: forall b. 
         Decoding Indexed content b
-     -> Either (DecodingErrors Indexed content) b
-  go (DecodingPure b) = Right b
+     -> EitherWrap (DecodingErrors Indexed content) b
+  go (DecodingPure b) = EitherWrap (Right b)
   go (DecodingAp (Indexed ix) decode apNext) =
     let rnext = go apNext
         content = Vector.unsafeIndex v ix
         rcurrent = mapLeft (DecodingErrors . Vector.singleton . DecodingError content (Indexed ix)) (decode content)
-    in eitherMonoidAp rnext rcurrent
+    in rnext <*> (EitherWrap rcurrent)
 
 -- | Maps over a 'Decoding' that expects headers, converting these
 --   expected headers into the indices of the columns that they
