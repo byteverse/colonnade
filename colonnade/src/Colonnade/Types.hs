@@ -31,7 +31,7 @@ newtype Indexed a = Indexed { getIndexed :: Int }
   deriving (Eq,Ord,Functor,Show,Read)
 
 data HeadingError content = HeadingError
-  { headingErrorMissing   :: Vector content -- ^ headers that were missing
+  { headingErrorMissing   :: Vector content       -- ^ headers that were missing
   , headingErrorDuplicate :: Vector (content,Int) -- ^ headers that occurred more than once
   } deriving (Show,Read)
 
@@ -49,11 +49,11 @@ instance Contravariant Headless where
 --   Check out @Control.Applicative.Free@ in the @free@ library to
 --   learn more about this.
 data Decoding f content a where
-  DecodingPure :: !a
+  DecodingPure :: !a -- ^ function
                -> Decoding f content a
-  DecodingAp :: !(f content)
-             -> !(content -> Either String a)
-             -> !(Decoding f content (a -> b))
+  DecodingAp :: !(f content) -- ^ header
+             -> !(content -> Either String a) -- ^ decoding function
+             -> !(Decoding f content (a -> b)) -- ^ next decoding
              -> Decoding f content b
 
 instance Functor (Decoding f content) where
