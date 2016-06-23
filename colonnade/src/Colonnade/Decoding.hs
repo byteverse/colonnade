@@ -23,9 +23,12 @@ headless f = DecodingAp Headless f (DecodingPure id)
 headed :: content -> (content -> Either String a) -> Decoding Headed content a
 headed h f = DecodingAp (Headed h) f (DecodingPure id)
 
+-- | Maps over a 'Decoding' that expects headers, converting these
+--   expected headers into the indices of the columns that they
+--   correspond to.
 headedToIndexed :: forall content a. Eq content
-                => Vector content
-                -> Decoding Headed content a
+                => Vector content -- ^ Headers in the source document
+                -> Decoding Headed content a -- ^ Decoding that contains expected headers
                 -> Either (HeadingError content) (Decoding Indexed content a)
 headedToIndexed v = go
   where

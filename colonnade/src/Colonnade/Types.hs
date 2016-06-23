@@ -14,6 +14,8 @@ module Colonnade.Types
 import Data.Vector (Vector)
 import Data.Functor.Contravariant (Contravariant(..))
 import Data.Functor.Contravariant.Divisible (Divisible(..))
+import Control.Exception (Exception)
+import Data.Typeable (Typeable)
 import qualified Data.Vector as Vector
 
 -- | Isomorphic to 'Identity'
@@ -32,6 +34,8 @@ data HeadingError content = HeadingError
   { headingErrorMissing   :: Vector content -- ^ headers that were missing
   , headingErrorDuplicate :: Vector (content,Int) -- ^ headers that occurred more than once
   } deriving (Show,Read)
+
+instance (Show content, Typeable content) => Exception (HeadingError content)
 
 instance Monoid (HeadingError content) where
   mempty = HeadingError Vector.empty Vector.empty
