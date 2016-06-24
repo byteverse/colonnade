@@ -28,7 +28,6 @@ newtype Headed a = Headed { getHeaded :: a }
 data Headless a = Headless
   deriving (Eq,Ord,Functor,Show,Read)
 
--- | Isomorphic to @'Const' 'Int'@
 data Indexed f a = Indexed
   { indexedIndex :: Int
   , indexedHeading :: f a
@@ -46,20 +45,19 @@ instance Monoid (HeadingErrors content) where
   mappend (HeadingErrors a1 b1) (HeadingErrors a2 b2) = HeadingErrors
     (a1 Vector.++ a2) (b1 Vector.++ b2)
 
-
 data DecodingError f content = DecodingError
   { decodingErrorContent :: content
   , decodingErrorHeader  :: Indexed f content
   , decodingErrorMessage :: String
-  } -- deriving (Show,Read)
+  } deriving (Show,Read)
 
--- instance (Show content, Typeable content) => Exception (DecodingError f content)
+-- instance (Show (f content), Typeable content) => Exception (DecodingError f content)
 
 newtype DecodingErrors f content = DecodingErrors
   { getDecodingErrors :: Vector (DecodingError f content)
-  } deriving (Monoid)
+  } deriving (Monoid,Show,Read)
 
--- instance (Show content, Typeable content) => Exception (DecodingErrors f content)
+-- instance (Show (f content), Typeable content) => Exception (DecodingErrors f content)
 
 instance Contravariant Headless where
   contramap _ Headless = Headless
