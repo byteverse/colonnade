@@ -29,8 +29,10 @@ data Headless a = Headless
   deriving (Eq,Ord,Functor,Show,Read)
 
 -- | Isomorphic to @'Const' 'Int'@
-newtype Indexed a = Indexed { getIndexed :: Int }
-  deriving (Eq,Ord,Functor,Show,Read)
+data Indexed f a = Indexed
+  { indexedIndex :: Int
+  , indexedHeading :: f a
+  } deriving (Eq,Ord,Functor,Show,Read)
 
 data HeadingErrors content = HeadingErrors
   { headingErrorsMissing   :: Vector content       -- ^ headers that were missing
@@ -47,7 +49,7 @@ instance Monoid (HeadingErrors content) where
 
 data DecodingError f content = DecodingError
   { decodingErrorContent :: content
-  , decodingErrorHeader  :: f content
+  , decodingErrorHeader  :: Indexed f content
   , decodingErrorMessage :: String
   } -- deriving (Show,Read)
 

@@ -24,20 +24,20 @@ headless f = DecodingAp Headless f (DecodingPure id)
 headed :: content -> (content -> Either String a) -> Decoding Headed content a
 headed h f = DecodingAp (Headed h) f (DecodingPure id)
 
-uncheckedRun :: forall content a.
+uncheckedRun :: forall content a f.
                 Vector content
-             -> Decoding Indexed content a
-             -> Either (DecodingErrors Indexed content) a
+             -> Decoding (Indexed f) content a
+             -> Either (DecodingErrors f content) a
 uncheckedRun v = getEitherWrap . go
   where
-  go :: forall b. 
-        Decoding Indexed content b
-     -> EitherWrap (DecodingErrors Indexed content) b
+  go :: forall b.
+        Decoding (Indexed f) content b
+     -> EitherWrap (DecodingErrors f content) b
   go (DecodingPure b) = EitherWrap (Right b)
-  go (DecodingAp (Indexed ix) decode apNext) =
+  go (DecodingAp ixed@(Indexed ix h) decode apNext) =
     let rnext = go apNext
         content = Vector.unsafeIndex v ix
-        rcurrent = mapLeft (DecodingErrors . Vector.singleton . DecodingError content (Indexed ix)) (decode content)
+        rcurrent = mapLeft (DecodingErrors . Vector.singleton . DecodingError content ixed) (decode content)
     in rnext <*> (EitherWrap rcurrent)
 
 -- | Maps over a 'Decoding' that expects headers, converting these
@@ -46,14 +46,14 @@ uncheckedRun v = getEitherWrap . go
 headedToIndexed :: forall content a. Eq content
                 => Vector content -- ^ Headers in the source document
                 -> Decoding Headed content a -- ^ Decoding that contains expected headers
-                -> Either (HeadingErrors content) (Decoding Indexed content a)
-headedToIndexed v = go
+                -> Either (HeadingErrors content) (Decoding (Indexed Headed) content a)
+headedToIndexed v = getEitherWrap . go
   where
   go :: forall b. Eq content
      => Decoding Headed content b
-     -> Either (HeadingErrors content) (Decoding Indexed content b)
-  go (DecodingPure b) = Right (DecodingPure b)
-  go (DecodingAp (Headed h) decode apNext) =
+     -> EitherWrap (HeadingErrors content) (Decoding (Indexed Headed) content b)
+  go (DecodingPure b) = EitherWrap (Right (DecodingPure b))
+  go (DecodingAp hd@(Headed h) decode apNext) =
     let rnext = go apNext
         ixs = Vector.elemIndices h v
         ixsLen = Vector.length ixs
@@ -61,13 +61,9 @@ headedToIndexed v = go
           | ixsLen == 1 = Right (Vector.unsafeIndex ixs 0)
           | ixsLen == 0 = Left (HeadingErrors (Vector.singleton h) Vector.empty)
           | otherwise   = Left (HeadingErrors Vector.empty (Vector.singleton (h,ixsLen)))
-    in case rcurrent of
-         Right ix -> case rnext of
-           Right apIx -> Right (DecodingAp (Indexed ix) decode apIx)
-           Left errNext -> Left errNext
-         Left err -> case rnext of
-           Right _ -> Left err
-           Left errNext -> Left (mappend err errNext)
+    in (\ix ap -> DecodingAp (Indexed ix hd) decode ap)
+       <$> EitherWrap rcurrent
+       <*> rnext
 
 eitherMonoidAp :: Monoid a => Either a (b -> c) -> Either a b -> Either a c
 eitherMonoidAp = go where
