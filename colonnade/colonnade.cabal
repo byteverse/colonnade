@@ -18,6 +18,7 @@ library
     Colonnade.Types
     Colonnade.Encoding
     Colonnade.Decoding
+    Colonnade.Internal
     Colonnade.Internal.Ap
   build-depends:
       base >= 4.7 && < 5
