@@ -24,6 +24,8 @@ headless f = DecodingAp Headless f (DecodingPure id)
 headed :: content -> (content -> Either String a) -> Decoding Headed content a
 headed h f = DecodingAp (Headed h) f (DecodingPure id)
 
+-- | This function does not check to make sure that the indicies in
+--   the 'Decoding' are in the 'Vector'.
 uncheckedRun :: forall content a f.
                 Vector content
              -> Decoding (Indexed f) content a

@@ -1,6 +1,6 @@
-name:                reflex-dom-colonnade
-version:             0.2
-synopsis:            Use colonnade with reflex-dom
+name:                siphon
+version:             0.1
+synopsis:            Generic types and functions for columnar encoding and decoding
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
 license:             BSD3
@@ -15,17 +15,20 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    Reflex.Dom.Colonnade
+    Siphon.Text
+    Siphon.ByteString.Char8
+    Siphon
+    Siphon.Types
+    Siphon.Encoding
   build-depends:
       base >= 4.7 && < 5
     , colonnade
+    , text
+    , bytestring
     , contravariant
     , vector
-    , reflex
-    , reflex-dom
-    , containers
-  default-language: Haskell2010
-  ghc-options:      -Wall
+    , pipes
+  default-language:    Haskell2010
 
 source-repository head
   type:     git

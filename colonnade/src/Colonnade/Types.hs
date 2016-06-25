@@ -91,8 +91,8 @@ instance Contravariant (OneEncoding f content) where
   contramap f (OneEncoding h e) = OneEncoding h (e . f)
 
 newtype Encoding f content a = Encoding
-  { getEncoding :: Vector (OneEncoding f content a) }
-  deriving (Monoid)
+  { getEncoding :: Vector (OneEncoding f content a) 
+  } deriving (Monoid)
 
 instance Contravariant (Encoding f content) where
   contramap f (Encoding v) = Encoding
