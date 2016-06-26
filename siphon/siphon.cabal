@@ -20,6 +20,7 @@ library
     Siphon
     Siphon.Types
     Siphon.Encoding
+    Siphon.Internal
   build-depends:
       base >= 4.7 && < 5
     , colonnade
@@ -28,6 +29,7 @@ library
     , contravariant
     , vector
     , pipes
+    , attoparsec
   default-language:    Haskell2010
 
 source-repository head
