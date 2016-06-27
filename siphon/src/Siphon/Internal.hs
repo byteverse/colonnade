@@ -92,8 +92,13 @@ sepByEndOfLine1' p = liftM2' (:) p loop
 -- this parser.
 row :: Word8  -- ^ Field delimiter
     -> AL.Parser (Vector ByteString)
-row !delim = V.fromList <$!> field delim `sepByDelim1'` delim <* endOfLine
+row !delim = rowNoNewline delim <* endOfLine
 {-# INLINE row #-}
+
+rowNoNewline :: Word8  -- ^ Field delimiter
+             -> AL.Parser (Vector ByteString)
+rowNoNewline !delim = V.fromList <$!> field delim `sepByDelim1'` delim
+{-# INLINE rowNoNewline #-}
 
 removeBlankLines :: [Vector ByteString] -> [Vector ByteString]
 removeBlankLines = filter (not . blankLine)
@@ -181,8 +186,9 @@ endOfLine :: A.Parser ()
 endOfLine = (A.word8 newline *> return ()) <|> (string (BC8.pack "\r\n") *> return ()) <|> (A.word8 cr *> return ())
 {-# INLINE endOfLine #-}
 
-doubleQuote, newline, cr :: Word8
+doubleQuote, newline, cr, comma :: Word8
 doubleQuote = 34
 newline = 10
 cr = 13
+comma = 44
 

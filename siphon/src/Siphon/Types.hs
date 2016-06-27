@@ -14,7 +14,7 @@ data Siphon c1 c2 = Siphon
   }
 
 data SiphonDecoding c1 c2 = SiphonDecoding
-  { siphonDecodingParse :: Atto.Parser c1 c2 -> c1 -> Atto.IResult c1 c2
+  { siphonDecodingParse :: c1 -> Atto.IResult c1 (Vector c2)
   , siphonDecodingNull  :: c1 -> Bool
   }
 

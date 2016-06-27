@@ -20,6 +20,7 @@ library
     Siphon
     Siphon.Types
     Siphon.Encoding
+    Siphon.Decoding
     Siphon.Internal
   build-depends:
       base >= 4.7 && < 5
