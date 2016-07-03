@@ -71,6 +71,7 @@ data RowError f content
   | RowErrorDecode !(DecodingCellErrors f content) -- ^ Error decoding the content
   | RowErrorSize !Int !Int -- ^ Wrong number of cells in the row
   | RowErrorHeading !(HeadingErrors content)
+  | RowErrorMinSize !Int !Int
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingErrors f content)
 

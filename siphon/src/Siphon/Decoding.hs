@@ -45,6 +45,7 @@ mkParseError i ctxs msg = id
     , "]"
     ]
 
+-- | This is seldom useful but is included for completeness.
 headlessPipe :: Monad m
   => SiphonDecoding c1 c2 
   -> Decoding Headless c2 a
@@ -53,6 +54,23 @@ headlessPipe sd decoding = uncheckedPipe requiredLength 0 sd indexedDecoding Not
   where
   indexedDecoding = Decoding.headlessToIndexed decoding
   requiredLength = Decoding.length indexedDecoding
+
+indexedPipe :: Monad m
+  => SiphonDecoding c1 c2 
+  -> Decoding (Indexed Headless) c2 a
+  -> Pipe c1 a m (DecodingRowError Headless c2)
+indexedPipe sd decoding = do
+  (firstRow, mleftovers) <- consumeGeneral sd mkParseError 
+  let req = Decoding.maxIndex decoding
+      vlen = Vector.length firstRow
+  if vlen < req
+    then return (DecodingRowError 0 (RowErrorMinSize req vlen))
+    else case Decoding.uncheckedRun decoding firstRow of
+      Left cellErr -> return $ DecodingRowError 0 $ RowErrorDecode cellErr
+      Right a -> do
+        yield a
+        uncheckedPipe vlen 1 sd decoding mleftovers
+
 
 headedPipe :: (Monad m, Eq c2)
   => SiphonDecoding c1 c2 
@@ -63,7 +81,7 @@ headedPipe sd decoding = do
   case Decoding.headedToIndexed headers decoding of
     Left headingErrs -> return (DecodingRowError 0 (RowErrorHeading headingErrs))
     Right indexedDecoding -> 
-      let requiredLength = Decoding.length indexedDecoding
+      let requiredLength = Vector.length headers
        in uncheckedPipe requiredLength 1 sd indexedDecoding mleftovers
   
 

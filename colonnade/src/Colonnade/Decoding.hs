@@ -25,6 +25,16 @@ headless f = DecodingAp Headless f (DecodingPure id)
 headed :: content -> (content -> Either String a) -> Decoding Headed content a
 headed h f = DecodingAp (Headed h) f (DecodingPure id)
 
+indexed :: Int -> (content -> Either String a) -> Decoding (Indexed Headless) content a
+indexed ix f = DecodingAp (Indexed ix Headless) f (DecodingPure id)
+
+maxIndex :: forall f c a. Decoding (Indexed f) c a -> Int
+maxIndex = go 0 where
+  go :: forall b. Int -> Decoding (Indexed f) c b -> Int
+  go !ix (DecodingPure _) = ix
+  go !ix1 (DecodingAp (Indexed ix2 _) decode apNext) =
+    go (max ix1 ix2) apNext
+
 -- | This function uses 'unsafeIndex' to access
 --   elements of the 'Vector'.
 uncheckedRunWithRow ::
