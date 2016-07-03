@@ -9,8 +9,10 @@ module Colonnade.Types
   , Headless(..)
   , Indexed(..)
   , HeadingErrors(..)
-  , DecodingError(..)
-  , DecodingErrors(..)
+  , DecodingCellError(..)
+  , DecodingRowError(..)
+  , DecodingCellErrors(..)
+  , RowError(..)
   ) where
 
 import Data.Vector (Vector)
@@ -29,8 +31,8 @@ data Headless a = Headless
   deriving (Eq,Ord,Functor,Show,Read)
 
 data Indexed f a = Indexed
-  { indexedIndex :: Int
-  , indexedHeading :: f a
+  { indexedIndex :: !Int
+  , indexedHeading :: !(f a)
   } deriving (Eq,Ord,Functor,Show,Read)
 
 data HeadingErrors content = HeadingErrors
@@ -45,17 +47,30 @@ instance Monoid (HeadingErrors content) where
   mappend (HeadingErrors a1 b1) (HeadingErrors a2 b2) = HeadingErrors
     (a1 Vector.++ a2) (b1 Vector.++ b2)
 
-data DecodingError f content = DecodingError
-  { decodingErrorContent :: content
-  , decodingErrorHeader  :: Indexed f content
-  , decodingErrorMessage :: String
+data DecodingCellError f content = DecodingCellError
+  { decodingCellErrorContent :: !content
+  , decodingCellErrorHeader  :: !(Indexed f content)
+  , decodingCellErrorMessage :: !String
   } deriving (Show,Read)
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingError f content)
 
-newtype DecodingErrors f content = DecodingErrors
-  { getDecodingErrors :: Vector (DecodingError f content)
+newtype DecodingCellErrors f content = DecodingCellErrors
+  { getDecodingCellErrors :: Vector (DecodingCellError f content)
   } deriving (Monoid,Show,Read)
+
+-- newtype ParseRowError = ParseRowError String
+
+data DecodingRowError f content = DecodingRowError
+  { decodingRowErrorRow   :: !Int
+  , decodingRowErrorError :: !(RowError f content)
+  }
+
+data RowError f content
+  = RowErrorParse !String -- ^ Error occurred parsing the document into cells
+  | RowErrorDecode !(DecodingCellErrors f content) -- ^ Error decoding the content
+  | RowErrorSize !Int !Int -- ^ Wrong number of cells in the row
+  | RowErrorHeading !(HeadingErrors content)
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingErrors f content)
 

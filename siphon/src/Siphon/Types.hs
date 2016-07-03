@@ -18,10 +18,10 @@ data SiphonDecoding c1 c2 = SiphonDecoding
   , siphonDecodingNull  :: c1 -> Bool
   }
 
-data WithEnd c = WithEnd
-  { withEndEnded :: Bool
-  , withEndContent :: c
-  }
+-- data WithEnd c = WithEnd
+--   { withEndEnded :: !Bool
+--   , withEndContent :: !c
+--   }
 
 -- data SiphonDecodingError
 --   { clarify 

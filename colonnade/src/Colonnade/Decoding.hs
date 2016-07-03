@@ -1,5 +1,6 @@
 {-# LANGUAGE RankNTypes          #-}
 {-# LANGUAGE ScopedTypeVariables #-}
+{-# LANGUAGE BangPatterns        #-}
 module Colonnade.Decoding where
 
 import Colonnade.Internal (EitherWrap(..))
@@ -24,23 +25,46 @@ headless f = DecodingAp Headless f (DecodingPure id)
 headed :: content -> (content -> Either String a) -> Decoding Headed content a
 headed h f = DecodingAp (Headed h) f (DecodingPure id)
 
+-- | This function uses 'unsafeIndex' to access
+--   elements of the 'Vector'.
+uncheckedRunWithRow ::
+     Int
+  -> Decoding (Indexed f) content a
+  -> Vector content
+  -> Either (DecodingRowError f content) a
+uncheckedRunWithRow i d v = mapLeft (DecodingRowError i . RowErrorDecode) (uncheckedRun d v)
+
 -- | This function does not check to make sure that the indicies in
 --   the 'Decoding' are in the 'Vector'.
 uncheckedRun :: forall content a f.
-                Vector content
-             -> Decoding (Indexed f) content a
-             -> Either (DecodingErrors f content) a
-uncheckedRun v = getEitherWrap . go
+                Decoding (Indexed f) content a
+             -> Vector content
+             -> Either (DecodingCellErrors f content) a
+uncheckedRun dc v = getEitherWrap (go dc)
   where
   go :: forall b.
         Decoding (Indexed f) content b
-     -> EitherWrap (DecodingErrors f content) b
+     -> EitherWrap (DecodingCellErrors f content) b
   go (DecodingPure b) = EitherWrap (Right b)
   go (DecodingAp ixed@(Indexed ix h) decode apNext) =
     let rnext = go apNext
         content = Vector.unsafeIndex v ix
-        rcurrent = mapLeft (DecodingErrors . Vector.singleton . DecodingError content ixed) (decode content)
+        rcurrent = mapLeft (DecodingCellErrors . Vector.singleton . DecodingCellError content ixed) (decode content)
     in rnext <*> (EitherWrap rcurrent)
+
+headlessToIndexed :: forall c a. 
+  Decoding Headless c a -> Decoding (Indexed Headless) c a
+headlessToIndexed = go 0 where
+  go :: forall b. Int -> Decoding Headless c b -> Decoding (Indexed Headless) c b
+  go !ix (DecodingPure a) = DecodingPure a
+  go !ix (DecodingAp Headless decode apNext) =
+    DecodingAp (Indexed ix Headless) decode (go (ix + 1) apNext)
+
+length :: forall f c a. Decoding f c a -> Int
+length = go 0 where 
+  go :: forall b. Int -> Decoding f c b -> Int
+  go !a (DecodingPure _) = a
+  go !a (DecodingAp _ _ apNext) = go (a + 1) apNext
 
 -- | Maps over a 'Decoding' that expects headers, converting these
 --   expected headers into the indices of the columns that they
