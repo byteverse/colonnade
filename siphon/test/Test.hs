@@ -30,9 +30,9 @@ main = defaultMain tests
 
 tests :: [Test]
 tests =
-  [ testGroup "ByteString encode/decode" 
+  [ testGroup "ByteString encode/decode"
     [ testCase "Headless Encoding (int,char,bool)" testEncodingA
-    , testProperty "Headless Isomorphism (int,char,bool)" 
+    , testProperty "Headless Isomorphism (int,char,bool)"
         $ propIsoPipe $
           (SE.pipe SC.byteStringChar8 encodingA)
           >->
@@ -64,7 +64,7 @@ byteStringEncodeChar = BC8.singleton
 
 byteStringEncodeInt :: Int -> ByteString
 byteStringEncodeInt = LByteString.toStrict
-                    . Builder.toLazyByteString 
+                    . Builder.toLazyByteString
                     . Builder.intDec
 
 byteStringEncodeBool :: Bool -> ByteString
@@ -84,7 +84,7 @@ encodingA = contramap tripleToPairs
   $ divided (Encoding.headless byteStringEncodeInt)
   $ divided (Encoding.headless byteStringEncodeChar)
   $ divided (Encoding.headless byteStringEncodeBool)
-  $ conquered 
+  $ conquered
 
 tripleToPairs :: (a,b,c) -> (a,(b,(c,())))
 tripleToPairs (a,b,c) = (a,(b,(c,())))
@@ -93,8 +93,8 @@ propIsoPipe :: Eq a => Pipe a a Identity () -> [a] -> Bool
 propIsoPipe p as = (Pipes.toList $ each as >-> p) == as
 
 testEncodingA :: Assertion
-testEncodingA = 
-  ( ByteString.concat $ Pipes.toList $ 
+testEncodingA =
+  ( ByteString.concat $ Pipes.toList $
     Pipes.yield (4,'c',False) >-> SE.pipe SC.byteStringChar8 encodingA
   ) @?= "4,c,false\n"
 
