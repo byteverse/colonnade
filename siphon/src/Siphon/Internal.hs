@@ -29,31 +29,50 @@ import qualified Data.ByteString.Unsafe as S
 import qualified Data.Vector as V
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LByteString
+import qualified Data.ByteString.Builder as Builder
 import Data.Word (Word8)
 import Data.Vector (Vector)
 import Data.ByteString (ByteString)
+import Data.Coerce (coerce)
+import Siphon.Types
 
 import Control.Applicative
 import Data.Monoid
 
--- parse :: Monad m
---       => SiphonDecoding c1 c2
---       -> Atto.Parser a b -- ^ Attoparsec parser
---       -> Pipes.Parser a m (Maybe (Either ParsingError b)) -- ^ Pipes parser
--- parse parser = S.StateT $ \p0 -> do
---     x <- nextSkipEmpty p0
---     case x of
---       Left r       -> return (Nothing, return r)
---       Right (a,p1) -> step (yield a >>) (_parse parser a) p1
---   where
---     step diffP res p0 = case res of
---       Fail _ c m -> return (Just (Left (ParsingError c m)), diffP p0)
---       Done a b   -> return (Just (Right b), yield a >> p0)
---       Partial k  -> do
---         x <- nextSkipEmpty p0
---         case x of
---           Left e -> step diffP (k mempty) (return e)
---           Right (a,p1) -> step (diffP . (yield a >>)) (k a) p1
+byteStringChar8 :: Siphon ByteString
+byteStringChar8 = Siphon 
+  escape 
+  encodeRow
+  (A.parse (row comma))
+  B.null
+
+encodeRow :: Vector (Escaped ByteString) -> ByteString
+encodeRow = id
+  . flip B.append (B.singleton newline)
+  . B.intercalate (B.singleton comma)
+  . V.toList
+  . coerce
+
+escape :: ByteString -> Escaped ByteString
+escape t = case B.find (\c -> c == newline || c == comma || c == doubleQuote) t of
+  Nothing -> Escaped t
+  Just _  -> escapeAlways t
+
+-- | This implementation is definitely suboptimal.
+-- A better option (which would waste a little space
+-- but would be much faster) would be to build the
+-- new bytestring by writing to a buffer directly.
+escapeAlways :: ByteString -> Escaped ByteString
+escapeAlways t = Escaped $ LByteString.toStrict $ Builder.toLazyByteString $
+     Builder.word8 doubleQuote
+  <> B.foldl
+      (\ acc b -> acc <> if b == doubleQuote
+          then Builder.byteString
+            (B.pack [doubleQuote,doubleQuote])
+          else Builder.word8 b)
+      mempty
+      t
+  <> Builder.word8 doubleQuote
 
 -- | Specialized version of 'sepBy1'' which is faster due to not
 -- accepting an arbitrary separator.

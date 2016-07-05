@@ -5,12 +5,19 @@ import qualified Data.Attoparsec.Types as Atto
 
 newtype Escaped c = Escaped { getEscaped :: c }
 
+data Siphon c = Siphon
+  { siphonEscape      :: !(c -> Escaped c)
+  , siphonIntercalate :: !(Vector (Escaped c) -> c)
+  , siphonParseRow    :: c -> Atto.IResult c (Vector c)
+  , siphonNull        :: c -> Bool
+  }
+
 -- | Consider changing out the use of 'Vector' here
 -- with the humble list instead. It might fuse away
 -- better. Not sure though.
-data Siphon c1 c2 = Siphon
-  { siphonEscape :: !(c1 -> Escaped c2)
-  , siphonIntercalate :: !(Vector (Escaped c2) -> c2)
+data SiphonX c1 c2 = SiphonX
+  { siphonXEscape :: !(c1 -> Escaped c2)
+  , siphonXIntercalate :: !(Vector (Escaped c2) -> c2)
   }
 
 data SiphonDecoding c1 c2 = SiphonDecoding

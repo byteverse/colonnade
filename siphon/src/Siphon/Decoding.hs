@@ -16,11 +16,6 @@ import qualified Data.Attoparsec.ByteString as AttoByteString
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Attoparsec.Types as Atto
 
-byteStringChar8 :: SiphonDecoding ByteString ByteString
-byteStringChar8 = SiphonDecoding
-  (AttoByteString.parse (row comma))
-  ByteString.null
-
 -- unrow :: c1 -> (Vector c2,c1)
 -- 
 -- row :: _
@@ -47,18 +42,18 @@ mkParseError i ctxs msg = id
 
 -- | This is seldom useful but is included for completeness.
 headlessPipe :: Monad m
-  => SiphonDecoding c1 c2 
-  -> Decoding Headless c2 a
-  -> Pipe c1 a m (DecodingRowError Headless c2)
+  => Siphon c
+  -> Decoding Headless c a
+  -> Pipe c a m (DecodingRowError Headless c)
 headlessPipe sd decoding = uncheckedPipe requiredLength 0 sd indexedDecoding Nothing
   where
   indexedDecoding = Decoding.headlessToIndexed decoding
   requiredLength = Decoding.length indexedDecoding
 
 indexedPipe :: Monad m
-  => SiphonDecoding c1 c2 
-  -> Decoding (Indexed Headless) c2 a
-  -> Pipe c1 a m (DecodingRowError Headless c2)
+  => Siphon c
+  -> Decoding (Indexed Headless) c a
+  -> Pipe c a m (DecodingRowError Headless c)
 indexedPipe sd decoding = do
   (firstRow, mleftovers) <- consumeGeneral sd mkParseError 
   let req = Decoding.maxIndex decoding
@@ -72,10 +67,10 @@ indexedPipe sd decoding = do
         uncheckedPipe vlen 1 sd decoding mleftovers
 
 
-headedPipe :: (Monad m, Eq c2)
-  => SiphonDecoding c1 c2 
-  -> Decoding Headed c2 a
-  -> Pipe c1 a m (DecodingRowError Headed c2)
+headedPipe :: (Monad m, Eq c)
+  => Siphon c
+  -> Decoding Headed c a
+  -> Pipe c a m (DecodingRowError Headed c)
 headedPipe sd decoding = do
   (headers, mleftovers) <- consumeGeneral sd mkParseError 
   case Decoding.headedToIndexed headers decoding of
@@ -88,10 +83,10 @@ headedPipe sd decoding = do
 uncheckedPipe :: Monad m
   => Int -- ^ expected length of each row
   -> Int -- ^ index of first row, usually zero or one
-  -> SiphonDecoding c1 c2 
-  -> Decoding (Indexed f) c2 a
-  -> Maybe c1
-  -> Pipe c1 a m (DecodingRowError f c2)
+  -> Siphon c 
+  -> Decoding (Indexed f) c a
+  -> Maybe c
+  -> Pipe c a m (DecodingRowError f c)
 uncheckedPipe requiredLength ix sd d mleftovers = 
   pipeGeneral ix sd mkParseError checkedRunWithRow mleftovers
   where
@@ -103,19 +98,19 @@ uncheckedPipe requiredLength ix sd d mleftovers =
       else Decoding.uncheckedRunWithRow rowIx d v
 
 consumeGeneral :: Monad m
-  => SiphonDecoding c1 c2
+  => Siphon c
   -> (Int -> [String] -> String -> e)
-  -> Consumer' c1 m (Vector c2, Maybe c1)
+  -> Consumer' c m (Vector c, Maybe c)
 consumeGeneral = error "ahh"
 
 pipeGeneral :: Monad m
   => Int -- ^ index of first row, usually zero or one
-  -> SiphonDecoding c1 c2 
+  -> Siphon c
   -> (Int -> [String] -> String -> e)
-  -> (Int -> Vector c2 -> Either e a)
-  -> Maybe c1 -- ^ leftovers that should be handled first
-  -> Pipe c1 a m e
-pipeGeneral initIx (SiphonDecoding parse isNull) wrapParseError decodeRow mleftovers = 
+  -> (Int -> Vector c -> Either e a)
+  -> Maybe c -- ^ leftovers that should be handled first
+  -> Pipe c a m e
+pipeGeneral initIx (Siphon _ _ parse isNull) wrapParseError decodeRow mleftovers = 
   case mleftovers of
     Nothing -> go1 initIx
     Just leftovers -> handleResult initIx (parse leftovers)
