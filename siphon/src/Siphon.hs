@@ -4,7 +4,7 @@ module Siphon where
 -- encode
 -- decode :: Pipe (Vector c) a m x
 
--- encode :: 
+-- encode ::
 
 -- row :: Vector (Escaped Text) -> Text
 -- row = Vector.

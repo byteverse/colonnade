@@ -62,7 +62,7 @@ uncheckedRun dc v = getEitherWrap (go dc)
         rcurrent = mapLeft (DecodingCellErrors . Vector.singleton . DecodingCellError content ixed) (decode content)
     in rnext <*> (EitherWrap rcurrent)
 
-headlessToIndexed :: forall c a. 
+headlessToIndexed :: forall c a.
   Decoding Headless c a -> Decoding (Indexed Headless) c a
 headlessToIndexed = go 0 where
   go :: forall b. Int -> Decoding Headless c b -> Decoding (Indexed Headless) c b
@@ -71,7 +71,7 @@ headlessToIndexed = go 0 where
     DecodingAp (Indexed ix Headless) decode (go (ix + 1) apNext)
 
 length :: forall f c a. Decoding f c a -> Int
-length = go 0 where 
+length = go 0 where
   go :: forall b. Int -> Decoding f c b -> Int
   go !a (DecodingPure _) = a
   go !a (DecodingAp _ _ apNext) = go (a + 1) apNext

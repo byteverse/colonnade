@@ -21,26 +21,26 @@ headed h f = Encoding (Vector.singleton (OneEncoding (Headed h) f))
 -- instead. It may allow more things to get inlined
 -- in to a loop.
 runRow :: (c1 -> c2) -> Encoding f c1 a -> a -> Vector c2
-runRow g (Encoding v) a = flip Vector.map v $ 
+runRow g (Encoding v) a = flip Vector.map v $
   \(OneEncoding _ encode) -> g (encode a)
 
-runRowMonadic :: Monad m 
-              => Encoding f content a 
-              -> (content -> m ()) 
-              -> a 
+runRowMonadic :: Monad m
+              => Encoding f content a
+              -> (content -> m ())
+              -> a
               -> m ()
-runRowMonadic (Encoding v) g a = Vector.forM_ v $ \e -> 
+runRowMonadic (Encoding v) g a = Vector.forM_ v $ \e ->
   g (oneEncodingEncode e a)
 
 runHeader :: (c1 -> c2) -> Encoding Headed c1 a -> Vector c2
-runHeader g (Encoding v) = 
+runHeader g (Encoding v) =
   Vector.map (g . getHeaded . oneEncodingHead) v
 
-runHeaderMonadic :: Monad m 
-                 => Encoding Headed content a 
-                 -> (content -> m ()) 
+runHeaderMonadic :: Monad m
+                 => Encoding Headed content a
+                 -> (content -> m ())
                  -> m ()
-runHeaderMonadic (Encoding v) g = 
+runHeaderMonadic (Encoding v) g =
   Vector.mapM_ (g . getHeaded . oneEncodingHead) v
 
 

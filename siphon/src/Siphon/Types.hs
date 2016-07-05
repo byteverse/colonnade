@@ -31,6 +31,6 @@ data SiphonDecoding c1 c2 = SiphonDecoding
 --   }
 
 -- data SiphonDecodingError
---   { clarify 
+--   { clarify
 --   }
 

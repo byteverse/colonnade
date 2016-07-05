@@ -33,7 +33,7 @@ elFromCell :: MonadWidget t m => String -> Cell m -> m ()
 elFromCell name (Cell attrs contents) = elAttr name attrs contents
 
 theadBuild :: MonadWidget t m => Encoding Headed (Cell m) a -> m ()
-theadBuild encoding = el "thead" . el "tr" 
+theadBuild encoding = el "thead" . el "tr"
   $ Encoding.runHeaderMonadic encoding (elFromCell "th")
 
 dynamic :: (MonadWidget t m, Foldable f)
