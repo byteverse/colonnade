@@ -1,5 +1,5 @@
 name:                reflex-dom-colonnade
-version:             0.2
+version:             0.3
 synopsis:            Use colonnade with reflex-dom
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
@@ -18,12 +18,13 @@ library
     Reflex.Dom.Colonnade
   build-depends:
       base >= 4.7 && < 5
-    , colonnade
+    , colonnade >= 0.3
     , contravariant
     , vector
     , reflex
     , reflex-dom
     , containers
+    , semigroups
   default-language: Haskell2010
   ghc-options:      -Wall
 

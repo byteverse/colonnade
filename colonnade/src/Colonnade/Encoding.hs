@@ -24,24 +24,24 @@ runRow :: (c1 -> c2) -> Encoding f c1 a -> a -> Vector c2
 runRow g (Encoding v) a = flip Vector.map v $
   \(OneEncoding _ encode) -> g (encode a)
 
-runRowMonadic :: Monad m
+runRowMonadic :: (Monad m, Monoid b)
               => Encoding f content a
-              -> (content -> m ())
+              -> (content -> m b)
               -> a
-              -> m ()
-runRowMonadic (Encoding v) g a = Vector.forM_ v $ \e ->
+              -> m b
+runRowMonadic (Encoding v) g a = fmap (mconcat . Vector.toList) $ Vector.forM v $ \e ->
   g (oneEncodingEncode e a)
 
 runHeader :: (c1 -> c2) -> Encoding Headed c1 a -> Vector c2
 runHeader g (Encoding v) =
   Vector.map (g . getHeaded . oneEncodingHead) v
 
-runHeaderMonadic :: Monad m
+runHeaderMonadic :: (Monad m, Monoid b)
                  => Encoding Headed content a
-                 -> (content -> m ())
-                 -> m ()
+                 -> (content -> m b)
+                 -> m b
 runHeaderMonadic (Encoding v) g =
-  Vector.mapM_ (g . getHeaded . oneEncodingHead) v
+  fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneEncodingHead) v
 
 
 
