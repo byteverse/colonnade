@@ -67,7 +67,6 @@ testEncodingA =
     Pipes.yield (4,'c',False) >-> SE.pipe SC.byteStringChar8 encodingA
   ) @?= "4,c,false\n"
 
-
 propEncodeDecodeIso :: Eq a => (a -> b) -> (b -> Maybe a) -> a -> Bool
 propEncodeDecodeIso f g a = g (f a) == Just a
 

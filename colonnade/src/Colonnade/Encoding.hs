@@ -29,8 +29,9 @@ runRowMonadic :: (Monad m, Monoid b)
               -> (content -> m b)
               -> a
               -> m b
-runRowMonadic (Encoding v) g a = fmap (mconcat . Vector.toList) $ Vector.forM v $ \e ->
-  g (oneEncodingEncode e a)
+runRowMonadic (Encoding v) g a = fmap (mconcat . Vector.toList) 
+  $ Vector.forM v 
+  $ \e -> g (oneEncodingEncode e a)
 
 runHeader :: (c1 -> c2) -> Encoding Headed c1 a -> Vector c2
 runHeader g (Encoding v) =
@@ -43,5 +44,14 @@ runHeaderMonadic :: (Monad m, Monoid b)
 runHeaderMonadic (Encoding v) g =
   fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneEncodingHead) v
 
+fromMaybe :: c -> Encoding f c a -> Encoding f c (Maybe a)
+fromMaybe c (Encoding v) = Encoding $ flip Vector.map v $
+  \(OneEncoding h encode) -> OneEncoding h (maybe c encode)
 
+columns :: (b -> a -> c)
+        -> (b -> f c) 
+        -> Vector b 
+        -> Encoding f c a
+columns getCell getHeader bs =
+  Encoding $ Vector.map (\b -> OneEncoding (getHeader b) (getCell b)) bs
 
