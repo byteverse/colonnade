@@ -19,6 +19,8 @@ import qualified Data.ByteString            as ByteString
 import qualified Data.ByteString.Char8      as BC8
 import qualified Colonnade.Decoding         as Decoding
 import qualified Colonnade.Encoding         as Encoding
+import qualified Colonnade.Decoding.ByteString.Char8 as CDB
+import qualified Colonnade.Encoding.ByteString.Char8 as CEB
 import qualified Siphon.Encoding            as SE
 import qualified Siphon.Decoding            as SD
 import qualified Siphon.Content             as SC
@@ -40,50 +42,18 @@ tests =
     ]
   ]
 
-byteStringDecodeInt :: ByteString -> Either String Int
-byteStringDecodeInt b = do
-  (a,bsRem) <- maybe (Left "could not parse int") Right (BC8.readInt b)
-  if ByteString.null bsRem
-    then Right a
-    else Left "found extra characters after int"
-
-byteStringDecodeChar :: ByteString -> Either String Char
-byteStringDecodeChar b = case BC8.length b of
-  1 -> Right (BC8.head b)
-  0 -> Left "cannot decode Char from empty bytestring"
-  _ -> Left "cannot decode Char from multi-character bytestring"
-
-byteStringDecodeBool :: ByteString -> Either String Bool
-byteStringDecodeBool b
-  | b == BC8.pack "true" = Right True
-  | b == BC8.pack "false" = Right False
-  | otherwise = Left "must be true or false"
-
-byteStringEncodeChar :: Char -> ByteString
-byteStringEncodeChar = BC8.singleton
-
-byteStringEncodeInt :: Int -> ByteString
-byteStringEncodeInt = LByteString.toStrict
-                    . Builder.toLazyByteString 
-                    . Builder.intDec
-
-byteStringEncodeBool :: Bool -> ByteString
-byteStringEncodeBool x = case x of
-  True -> BC8.pack "true"
-  False -> BC8.pack "false"
-
 
 decodingA :: Decoding Headless ByteString (Int,Char,Bool)
 decodingA = (,,)
-  <$> Decoding.headless byteStringDecodeInt
-  <*> Decoding.headless byteStringDecodeChar
-  <*> Decoding.headless byteStringDecodeBool
+  <$> Decoding.headless CDB.int
+  <*> Decoding.headless CDB.char
+  <*> Decoding.headless CDB.bool
 
 encodingA :: Encoding Headless ByteString (Int,Char,Bool)
 encodingA = contramap tripleToPairs
-  $ divided (Encoding.headless byteStringEncodeInt)
-  $ divided (Encoding.headless byteStringEncodeChar)
-  $ divided (Encoding.headless byteStringEncodeBool)
+  $ divided (Encoding.headless CEB.int)
+  $ divided (Encoding.headless CEB.char)
+  $ divided (Encoding.headless CEB.bool)
   $ conquered 
 
 tripleToPairs :: (a,b,c) -> (a,(b,(c,())))
