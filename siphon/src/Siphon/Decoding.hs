@@ -16,19 +16,6 @@ import qualified Data.Attoparsec.ByteString as AttoByteString
 import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Attoparsec.Types as Atto
 
--- unrow :: c1 -> (Vector c2,c1)
---
--- row :: _
---     -> Decoding (Indexed f) c a
---     -> Vector c
---     -> Either DecodingErrors a
-
--- decodeVectorPipe ::
---      Monad m
---   => Decoding (Indexed f) c a
---   -> Pipe (Vector c) a m ()
--- decodeVectorPipe
-
 mkParseError :: Int -> [String] -> String -> DecodingRowError f content
 mkParseError i ctxs msg = id
   $ DecodingRowError i
@@ -55,16 +42,19 @@ indexedPipe :: Monad m
   -> Decoding (Indexed Headless) c a
   -> Pipe c a m (DecodingRowError Headless c)
 indexedPipe sd decoding = do
-  (firstRow, mleftovers) <- consumeGeneral sd mkParseError
-  let req = Decoding.maxIndex decoding
-      vlen = Vector.length firstRow
-  if vlen < req
-    then return (DecodingRowError 0 (RowErrorMinSize req vlen))
-    else case Decoding.uncheckedRun decoding firstRow of
-      Left cellErr -> return $ DecodingRowError 0 $ RowErrorDecode cellErr
-      Right a -> do
-        yield a
-        uncheckedPipe vlen 1 sd decoding mleftovers
+  e <- consumeGeneral 0 sd mkParseError
+  case e of
+    Left err -> return err
+    Right (firstRow, mleftovers) -> 
+      let req = Decoding.maxIndex decoding
+          vlen = Vector.length firstRow
+       in if vlen < req
+            then return (DecodingRowError 0 (RowErrorMinSize req vlen))
+            else case Decoding.uncheckedRun decoding firstRow of
+              Left cellErr -> return $ DecodingRowError 0 $ RowErrorDecode cellErr
+              Right a -> do
+                yield a
+                uncheckedPipe vlen 1 sd decoding mleftovers
 
 
 headedPipe :: (Monad m, Eq c)
@@ -72,12 +62,15 @@ headedPipe :: (Monad m, Eq c)
   -> Decoding Headed c a
   -> Pipe c a m (DecodingRowError Headed c)
 headedPipe sd decoding = do
-  (headers, mleftovers) <- consumeGeneral sd mkParseError
-  case Decoding.headedToIndexed headers decoding of
-    Left headingErrs -> return (DecodingRowError 0 (RowErrorHeading headingErrs))
-    Right indexedDecoding ->
-      let requiredLength = Vector.length headers
-       in uncheckedPipe requiredLength 1 sd indexedDecoding mleftovers
+  e <- consumeGeneral 0 sd mkParseError
+  case e of
+    Left err -> return err
+    Right (headers, mleftovers) -> 
+      case Decoding.headedToIndexed headers decoding of
+        Left headingErrs -> return (DecodingRowError 0 (RowErrorHeading headingErrs))
+        Right indexedDecoding ->
+          let requiredLength = Vector.length headers
+           in uncheckedPipe requiredLength 1 sd indexedDecoding mleftovers
 
 
 uncheckedPipe :: Monad m
@@ -98,10 +91,26 @@ uncheckedPipe requiredLength ix sd d mleftovers =
       else Decoding.uncheckedRunWithRow rowIx d v
 
 consumeGeneral :: Monad m
-  => Siphon c
+  => Int
+  -> Siphon c
   -> (Int -> [String] -> String -> e)
-  -> Consumer' c m (Vector c, Maybe c)
-consumeGeneral = error "ahh"
+  -> Consumer' c m (Either e (Vector c, Maybe c))
+consumeGeneral ix (Siphon _ _ parse isNull) wrapParseError = do
+  c <- awaitSkip isNull
+  handleResult (parse c)
+  where
+  go k = do
+    c <- awaitSkip isNull
+    handleResult (k c)
+  handleResult r = case r of
+    Atto.Fail _ ctxs msg -> return $ Left 
+      $ wrapParseError ix ctxs msg
+    Atto.Done c v ->
+      let mcontent = if isNull c
+            then Nothing
+            else Just c
+       in return (Right (v,mcontent))
+    Atto.Partial k -> go k
 
 pipeGeneral :: Monad m
   => Int -- ^ index of first row, usually zero or one

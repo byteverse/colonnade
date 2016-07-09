@@ -19,3 +19,6 @@ bool x = case x of
   True -> BC8.pack "true"
   False -> BC8.pack "false"
 
+byteString :: ByteString -> ByteString
+byteString = id
+

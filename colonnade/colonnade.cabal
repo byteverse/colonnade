@@ -17,6 +17,7 @@ library
   exposed-modules:
     Colonnade.Types
     Colonnade.Encoding
+    Colonnade.Encoding.Text
     Colonnade.Encoding.ByteString.Char8
     Colonnade.Decoding
     Colonnade.Decoding.ByteString.Char8
