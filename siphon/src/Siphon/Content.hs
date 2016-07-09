@@ -1,4 +1,4 @@
-module Siphon.Content 
+module Siphon.Content
   ( byteStringChar8
   ) where
 

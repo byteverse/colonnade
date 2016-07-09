@@ -40,8 +40,8 @@ import Control.Applicative
 import Data.Monoid
 
 byteStringChar8 :: Siphon ByteString
-byteStringChar8 = Siphon 
-  escape 
+byteStringChar8 = Siphon
+  escape
   encodeRow
   (A.parse (row comma))
   B.null
@@ -54,7 +54,7 @@ encodeRow = id
   . coerce
 
 escape :: ByteString -> Escaped ByteString
-escape t = case B.find (\c -> c == newline || c == comma || c == doubleQuote) t of
+escape t = case B.find (\c -> c == newline || c == cr || c == comma || c == doubleQuote) t of
   Nothing -> Escaped t
   Just _  -> escapeAlways t
 

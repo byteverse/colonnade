@@ -17,7 +17,7 @@ import qualified Data.ByteString.Char8 as ByteString
 import qualified Data.Attoparsec.Types as Atto
 
 -- unrow :: c1 -> (Vector c2,c1)
--- 
+--
 -- row :: _
 --     -> Decoding (Indexed f) c a
 --     -> Vector c
@@ -27,7 +27,7 @@ import qualified Data.Attoparsec.Types as Atto
 --      Monad m
 --   => Decoding (Indexed f) c a
 --   -> Pipe (Vector c) a m ()
--- decodeVectorPipe 
+-- decodeVectorPipe
 
 mkParseError :: Int -> [String] -> String -> DecodingRowError f content
 mkParseError i ctxs msg = id
@@ -55,7 +55,7 @@ indexedPipe :: Monad m
   -> Decoding (Indexed Headless) c a
   -> Pipe c a m (DecodingRowError Headless c)
 indexedPipe sd decoding = do
-  (firstRow, mleftovers) <- consumeGeneral sd mkParseError 
+  (firstRow, mleftovers) <- consumeGeneral sd mkParseError
   let req = Decoding.maxIndex decoding
       vlen = Vector.length firstRow
   if vlen < req
@@ -72,28 +72,28 @@ headedPipe :: (Monad m, Eq c)
   -> Decoding Headed c a
   -> Pipe c a m (DecodingRowError Headed c)
 headedPipe sd decoding = do
-  (headers, mleftovers) <- consumeGeneral sd mkParseError 
+  (headers, mleftovers) <- consumeGeneral sd mkParseError
   case Decoding.headedToIndexed headers decoding of
     Left headingErrs -> return (DecodingRowError 0 (RowErrorHeading headingErrs))
-    Right indexedDecoding -> 
+    Right indexedDecoding ->
       let requiredLength = Vector.length headers
        in uncheckedPipe requiredLength 1 sd indexedDecoding mleftovers
-  
+
 
 uncheckedPipe :: Monad m
   => Int -- ^ expected length of each row
   -> Int -- ^ index of first row, usually zero or one
-  -> Siphon c 
+  -> Siphon c
   -> Decoding (Indexed f) c a
   -> Maybe c
   -> Pipe c a m (DecodingRowError f c)
-uncheckedPipe requiredLength ix sd d mleftovers = 
+uncheckedPipe requiredLength ix sd d mleftovers =
   pipeGeneral ix sd mkParseError checkedRunWithRow mleftovers
   where
-  checkedRunWithRow rowIx v = 
+  checkedRunWithRow rowIx v =
     let vlen = Vector.length v in
     if vlen /= requiredLength
-      then Left $ DecodingRowError rowIx 
+      then Left $ DecodingRowError rowIx
                 $ RowErrorSize requiredLength vlen
       else Decoding.uncheckedRunWithRow rowIx d v
 
@@ -110,7 +110,7 @@ pipeGeneral :: Monad m
   -> (Int -> Vector c -> Either e a)
   -> Maybe c -- ^ leftovers that should be handled first
   -> Pipe c a m e
-pipeGeneral initIx (Siphon _ _ parse isNull) wrapParseError decodeRow mleftovers = 
+pipeGeneral initIx (Siphon _ _ parse isNull) wrapParseError decodeRow mleftovers =
   case mleftovers of
     Nothing -> go1 initIx
     Just leftovers -> handleResult initIx (parse leftovers)
@@ -138,6 +138,6 @@ awaitSkip :: Monad m
 awaitSkip f = go where
   go = do
     a <- await
-    if f a then go else return a 
+    if f a then go else return a
 
 
