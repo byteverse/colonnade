@@ -17,3 +17,8 @@ int = LText.toStrict
 text :: Text -> Text
 text = id
 
+bool :: Bool -> Text
+bool x = case x of
+  True -> Text.pack "true"
+  False -> Text.pack "false"
+

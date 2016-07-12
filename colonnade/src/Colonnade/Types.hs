@@ -38,7 +38,7 @@ data Indexed f a = Indexed
 data HeadingErrors content = HeadingErrors
   { headingErrorsMissing   :: Vector content       -- ^ headers that were missing
   , headingErrorsDuplicate :: Vector (content,Int) -- ^ headers that occurred more than once
-  } deriving (Show,Read)
+  } deriving (Show,Read,Eq)
 
 instance (Show content, Typeable content) => Exception (HeadingErrors content)
 
@@ -51,27 +51,32 @@ data DecodingCellError f content = DecodingCellError
   { decodingCellErrorContent :: !content
   , decodingCellErrorHeader  :: !(Indexed f content)
   , decodingCellErrorMessage :: !String
-  } deriving (Show,Read)
+  } deriving (Show,Read,Eq)
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingError f content)
 
 newtype DecodingCellErrors f content = DecodingCellErrors
   { getDecodingCellErrors :: Vector (DecodingCellError f content)
-  } deriving (Monoid,Show,Read)
+  } deriving (Monoid,Show,Read,Eq)
 
 -- newtype ParseRowError = ParseRowError String
 
+-- TODO: rewrite the instances for this by hand. They
+-- currently use FlexibleContexts.
 data DecodingRowError f content = DecodingRowError
   { decodingRowErrorRow   :: !Int
   , decodingRowErrorError :: !(RowError f content)
-  }
+  } deriving (Show,Read,Eq)
 
+-- TODO: rewrite the instances for this by hand. They
+-- currently use FlexibleContexts.
 data RowError f content
   = RowErrorParse !String -- ^ Error occurred parsing the document into cells
   | RowErrorDecode !(DecodingCellErrors f content) -- ^ Error decoding the content
   | RowErrorSize !Int !Int -- ^ Wrong number of cells in the row
   | RowErrorHeading !(HeadingErrors content)
   | RowErrorMinSize !Int !Int
+  deriving (Show,Read,Eq)
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingErrors f content)
 

@@ -1,8 +1,8 @@
-name:                siphon
-version:             0.1
-synopsis:            Generic types and functions for columnar encoding and decoding
+name:                geolite-csv
+version:             0.1.0
+synopsis:            Initial project template from stack
 description:         Please see README.md
-homepage:            https://github.com/andrewthad/colonnade#readme
+homepage:            https://github.com/andrewthad/colonnade
 license:             BSD3
 license-file:        LICENSE
 author:              Andrew Martin
@@ -10,49 +10,39 @@ maintainer:          andrew.thaddeus@gmail.com
 copyright:           2016 Andrew Martin
 category:            web
 build-type:          Simple
+-- extra-source-files:
 cabal-version:       >=1.10
 
 library
   hs-source-dirs:      src
   exposed-modules:
-    Siphon.Text
-    Siphon.ByteString.Char8
-    Siphon
-    Siphon.Types
-    Siphon.Content
-    Siphon.Encoding
-    Siphon.Decoding
-    Siphon.Internal
-    Siphon.Internal.Text
+    Geolite.Types
+    Geolite.Csv
   build-depends:
       base >= 4.7 && < 5
     , colonnade
+    , siphon
+    , ip   >= 0.8.4
     , text
-    , bytestring
-    , contravariant
-    , vector
     , pipes
-    , attoparsec
   default-language:    Haskell2010
 
-test-suite siphon-test
+test-suite geolite-csv-test
   type:                exitcode-stdio-1.0
   hs-source-dirs:      test
-  main-is:             Test.hs
+  main-is:             Spec.hs
   build-depends:
       base
-    , either
+    , geolite-csv
     , siphon
     , colonnade
-    , contravariant
     , test-framework
-    , test-framework-quickcheck2
-    , QuickCheck
     , text
-    , bytestring
     , pipes
     , HUnit
     , test-framework-hunit
+    , pipes-bytestring
+    , pipes-text
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 

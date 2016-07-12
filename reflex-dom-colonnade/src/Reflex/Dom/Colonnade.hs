@@ -1,3 +1,5 @@
+{-# LANGUAGE DeriveFunctor #-}
+
 module Reflex.Dom.Colonnade where
 
 import Colonnade.Types
@@ -18,7 +20,10 @@ cell = Cell Map.empty
 data Cell m b = Cell
   { cellAttrs :: !(Map String String)
   , cellContents :: !(m b)
-  }
+  } deriving (Functor)
+
+-- instance Functor (Cell m) where
+--   fmap f (a
 
 basic :: (MonadWidget t m, Foldable f)
       => Map String String -- ^ Table element attributes
@@ -29,7 +34,7 @@ basic tableAttrs as encoding = do
   elAttr "table" tableAttrs $ do
     theadBuild encoding
     el "tbody" $ forM_ as $ \a -> do
-      el "tr" $ mapM_ (Encoding.runRowMonadic encoding (elFromCell "td")) as
+      el "tr" $ Encoding.runRowMonadic encoding (elFromCell "td") a
 
 elFromCell :: MonadWidget t m => String -> Cell m b -> m b
 elFromCell name (Cell attrs contents) = elAttr name attrs contents

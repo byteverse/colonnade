@@ -30,6 +30,7 @@ import qualified Data.Vector as V
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LByteString
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.Text as T
 import Data.Word (Word8)
 import Data.Vector (Vector)
 import Data.ByteString (ByteString)

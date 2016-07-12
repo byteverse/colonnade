@@ -3,7 +3,7 @@
 {-# LANGUAGE BangPatterns        #-}
 module Colonnade.Decoding where
 
-import Colonnade.Internal (EitherWrap(..))
+import Colonnade.Internal (EitherWrap(..),mapLeft)
 import Colonnade.Types
 import Data.Functor.Contravariant
 import Data.Vector (Vector)
@@ -100,15 +100,4 @@ headedToIndexed v = getEitherWrap . go
     in (\ix ap -> DecodingAp (Indexed ix hd) decode ap)
        <$> EitherWrap rcurrent
        <*> rnext
-
-eitherMonoidAp :: Monoid a => Either a (b -> c) -> Either a b -> Either a c
-eitherMonoidAp = go where
-  go (Left a1) (Left a2) = Left (mappend a1 a2)
-  go (Left a1) (Right _) = Left a1
-  go (Right _) (Left a2) = Left a2
-  go (Right f) (Right b) = Right (f b)
-
-mapLeft :: (a -> b) -> Either a c -> Either b c
-mapLeft _ (Right a) = Right a
-mapLeft f (Left a) = Left (f a)
 

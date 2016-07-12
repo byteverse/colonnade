@@ -12,3 +12,6 @@ instance Monoid a => Applicative (EitherWrap a) where
   EitherWrap (Right _) <*> EitherWrap (Left a2) = EitherWrap (Left a2)
   EitherWrap (Right f) <*> EitherWrap (Right b) = EitherWrap (Right (f b))
 
+mapLeft :: (a -> b) -> Either a c -> Either b c
+mapLeft _ (Right a) = Right a
+mapLeft f (Left a) = Left (f a)

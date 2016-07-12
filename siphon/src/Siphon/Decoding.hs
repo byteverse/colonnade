@@ -27,6 +27,13 @@ mkParseError i ctxs msg = id
     , "]"
     ]
 
+csvResultFromEither :: Either (Producer ByteString m ()) () -> CsvResult f c
+csvResultFromEither (Left _) = CsvResultTextDecodeError
+csvResultFromEither (Right ()) = CsvResultSuccess
+
+csvResultFromDecodingRowError :: DecodingRowError f c -> CsvResult f c
+csvResultFromDecodingRowError = CsvResultDecodeError
+
 -- | This is seldom useful but is included for completeness.
 headlessPipe :: Monad m
   => Siphon c
@@ -45,7 +52,7 @@ indexedPipe sd decoding = do
   e <- consumeGeneral 0 sd mkParseError
   case e of
     Left err -> return err
-    Right (firstRow, mleftovers) -> 
+    Right (firstRow, mleftovers) ->
       let req = Decoding.maxIndex decoding
           vlen = Vector.length firstRow
        in if vlen < req
@@ -65,7 +72,7 @@ headedPipe sd decoding = do
   e <- consumeGeneral 0 sd mkParseError
   case e of
     Left err -> return err
-    Right (headers, mleftovers) -> 
+    Right (headers, mleftovers) ->
       case Decoding.headedToIndexed headers decoding of
         Left headingErrs -> return (DecodingRowError 0 (RowErrorHeading headingErrs))
         Right indexedDecoding ->
@@ -103,7 +110,7 @@ consumeGeneral ix (Siphon _ _ parse isNull) wrapParseError = do
     c <- awaitSkip isNull
     handleResult (k c)
   handleResult r = case r of
-    Atto.Fail _ ctxs msg -> return $ Left 
+    Atto.Fail _ ctxs msg -> return $ Left
       $ wrapParseError ix ctxs msg
     Atto.Done c v ->
       let mcontent = if isNull c
