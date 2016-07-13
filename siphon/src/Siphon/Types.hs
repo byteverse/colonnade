@@ -13,12 +13,12 @@ data Siphon c = Siphon
   , siphonNull        :: c -> Bool
   }
 
--- | This type is provided for convenience with @pipes-text@
-data CsvResult f c
-  = CsvResultSuccess
-  | CsvResultTextDecodeError
-  | CsvResultDecodeError (DecodingRowError f c)
-  deriving (Show,Read,Eq)
+-- -- | This type is provided for convenience with @pipes-text@
+-- data CsvResult f c
+--   = CsvResultSuccess
+--   | CsvResultTextDecodeError
+--   | CsvResultDecodeError (DecodingRowError f c)
+--   deriving (Show,Read,Eq)
 
 
 -- | Consider changing out the use of 'Vector' here

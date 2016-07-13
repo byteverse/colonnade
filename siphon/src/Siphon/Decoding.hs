@@ -27,12 +27,12 @@ mkParseError i ctxs msg = id
     , "]"
     ]
 
-csvResultFromEither :: Either (Producer ByteString m ()) () -> CsvResult f c
-csvResultFromEither (Left _) = CsvResultTextDecodeError
-csvResultFromEither (Right ()) = CsvResultSuccess
-
-csvResultFromDecodingRowError :: DecodingRowError f c -> CsvResult f c
-csvResultFromDecodingRowError = CsvResultDecodeError
+-- | This is a convenience function for working with @pipes-text@.
+--   It will convert a UTF-8 decoding error into a `DecodingRowError`,
+--   so the pipes can be properly chained together.
+convertDecodeError :: String -> Either (Producer ByteString m ()) () -> Maybe (DecodingRowError f c)
+convertDecodeError encodingName (Left _) = Just (DecodingRowError 0 (RowErrorMalformed encodingName))
+convertDecodeError _ (Right ()) = Nothing
 
 -- | This is seldom useful but is included for completeness.
 headlessPipe :: Monad m
@@ -145,7 +145,8 @@ pipeGeneral initIx (Siphon _ _ parse isNull) wrapParseError decodeRow mleftovers
         Left err -> return err
         Right r -> do
           yield r
-          if isNull c1 then go1 ix else go2 ix c1
+          let ixNext = ix + 1
+          if isNull c1 then go1 ixNext else go2 ixNext c1
     Atto.Partial k -> go3 ix k
 
 awaitSkip :: Monad m

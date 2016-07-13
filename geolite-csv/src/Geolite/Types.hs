@@ -29,14 +29,14 @@ data City = City
 
 data Block = Block
   { blockNetwork :: IPv4Range
-  , blockGeonameId :: GeonameId
-  , blockRegisteredCountryGeonameId :: GeonameId
+  , blockGeonameId :: Maybe GeonameId
+  , blockRegisteredCountryGeonameId :: Maybe GeonameId
   , blockRepresentedCountryGeonameId :: Maybe GeonameId
   , blockIsAnonymousProxy :: Bool
   , blockIsSatelliteProvider :: Bool
   , blockPostalCode :: Text
-  , blockLatitude :: Fixed E4
-  , blockLongitude :: Fixed E4
-  , blockAccuracyRadius :: Int
+  , blockLatitude :: Maybe (Fixed E4)
+  , blockLongitude :: Maybe (Fixed E4)
+  , blockAccuracyRadius :: Maybe Int
   } deriving (Show,Read,Eq,Ord)
 

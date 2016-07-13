@@ -1,6 +1,7 @@
-{-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE DeriveFunctor              #-}
+{-# LANGUAGE DeriveFoldable             #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
-{-# LANGUAGE GADTs #-}
+{-# LANGUAGE GADTs                      #-}
 module Colonnade.Types
   ( Encoding(..)
   , Decoding(..)
@@ -24,11 +25,11 @@ import qualified Data.Vector as Vector
 
 -- | Isomorphic to 'Identity'
 newtype Headed a = Headed { getHeaded :: a }
-  deriving (Eq,Ord,Functor,Show,Read)
+  deriving (Eq,Ord,Functor,Show,Read,Foldable)
 
 -- | Isomorphic to 'Proxy'
 data Headless a = Headless
-  deriving (Eq,Ord,Functor,Show,Read)
+  deriving (Eq,Ord,Functor,Show,Read,Foldable)
 
 data Indexed f a = Indexed
   { indexedIndex :: !Int
@@ -76,6 +77,7 @@ data RowError f content
   | RowErrorSize !Int !Int -- ^ Wrong number of cells in the row
   | RowErrorHeading !(HeadingErrors content)
   | RowErrorMinSize !Int !Int
+  | RowErrorMalformed !String -- ^ Error decoding unicode content
   deriving (Show,Read,Eq)
 
 -- instance (Show (f content), Typeable content) => Exception (DecodingErrors f content)

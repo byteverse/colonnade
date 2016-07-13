@@ -39,16 +39,20 @@ decodingCity = City
 decodingBlock :: Decoding Headed Text Block
 decodingBlock = Block
   <$> CD.headed "network" IPv4RangeText.decodeEither
-  <*> CD.headed "geoname_id" (CDT.map GeonameId CDT.int)
+  <*> CD.headed "geoname_id"
+        (CDT.optional $ CDT.map GeonameId CDT.int)
   <*> CD.headed "registered_country_geoname_id"
-        (CDT.map GeonameId CDT.int)
+        (CDT.optional $ CDT.map GeonameId CDT.int)
   <*> CD.headed "represented_country_geoname_id"
         (CDT.optional $ CDT.map GeonameId CDT.int)
   <*> CD.headed "is_anonymous_proxy" (CDT.trueFalse "1" "0")
   <*> CD.headed "is_satellite_provider" (CDT.trueFalse "1" "0")
   <*> CD.headed "postal_code" CDT.text
-  <*> CD.headed "latitude" (CDT.fromReader TextRead.rational)
-  <*> CD.headed "longitude" (CDT.fromReader TextRead.rational)
-  <*> CD.headed "accuracy_radius" CDT.int
+  <*> CD.headed "latitude"
+        (CDT.optional $ CDT.fromReader TextRead.rational)
+  <*> CD.headed "longitude"
+        (CDT.optional $ CDT.fromReader TextRead.rational)
+  <*> CD.headed "accuracy_radius"
+        (CDT.optional CDT.int)
 
 

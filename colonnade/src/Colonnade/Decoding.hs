@@ -8,6 +8,7 @@ import Colonnade.Types
 import Data.Functor.Contravariant
 import Data.Vector (Vector)
 import qualified Data.Vector as Vector
+import Data.Char (chr)
 
 -- | Converts the content type of a 'Decoding'. The @'Contravariant' f@
 -- constraint means that @f@ can be 'Headless' but not 'Headed'.
@@ -100,4 +101,60 @@ headedToIndexed v = getEitherWrap . go
     in (\ix ap -> DecodingAp (Indexed ix hd) decode ap)
        <$> EitherWrap rcurrent
        <*> rnext
+
+-- | This adds one to the index because text editors consider
+--   line number to be one-based, not zero-based.
+prettyError :: (c -> String) -> DecodingRowError f c -> String
+prettyError toStr (DecodingRowError ix e) = unlines
+  $ ("Decoding error on line " ++ show (ix + 1) ++ " of file.")
+  : ("Error Category: " ++ descr)
+  : map ("  " ++) errDescrs
+  where (descr,errDescrs) = prettyRowError toStr e
+
+prettyRowError :: (content -> String) -> RowError f content -> (String, [String])
+prettyRowError toStr x = case x of
+  RowErrorParse err -> (,) "CSV Parsing"
+    [ "The line could not be parsed into cells correctly."
+    , "Original parser error: " ++ err
+    ]
+  RowErrorSize reqLen actualLen -> (,) "Row Length"
+    [ "Expected the row to have exactly " ++ show reqLen ++ " cells."
+    , "The row only has " ++ show actualLen ++ " cells."
+    ]
+  RowErrorMinSize reqLen actualLen -> (,) "Row Min Length"
+    [ "Expected the row to have at least " ++ show reqLen ++ " cells."
+    , "The row only has " ++ show actualLen ++ " cells."
+    ]
+  RowErrorMalformed enc -> (,) "Text Decoding"
+    [ "Tried to decode the input as " ++ enc ++ " text"
+    , "There is a mistake in the encoding of the text."
+    ]
+  RowErrorHeading errs -> (,) "Header" (prettyHeadingErrors toStr errs)
+  RowErrorDecode errs -> (,) "Cell Decoding" (prettyCellErrors toStr errs)
+
+prettyCellErrors :: (c -> String) -> DecodingCellErrors f c -> [String]
+prettyCellErrors toStr (DecodingCellErrors errs) = drop 1 $
+  flip concatMap errs $ \(DecodingCellError content (Indexed ix _) msg) ->
+    let str = toStr content in
+    [ "-----------"
+    , "Column " ++ columnNumToLetters ix
+    , "Original parse error: " ++ msg
+    , "Cell Content Length: " ++ show (Prelude.length str)
+    , "Cell Content: " ++ if null str
+        then "[empty cell]"
+        else str
+    ]
+
+prettyHeadingErrors :: (c -> String) -> HeadingErrors c -> [String]
+prettyHeadingErrors conv (HeadingErrors missing duplicates) = concat
+  [ concatMap (\h -> ["The header " ++ conv h ++ " was missing."]) missing
+  , concatMap (\(h,n) -> ["The header " ++ conv h ++ " occurred " ++ show n ++ " times."]) duplicates
+  ]
+
+columnNumToLetters :: Int -> String
+columnNumToLetters i
+  | i >= 0 && i < 25 = [chr (i + 65)]
+  | otherwise = "Beyond Z. Fix this."
+
+
 
