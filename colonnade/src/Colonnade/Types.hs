@@ -87,13 +87,15 @@ instance Contravariant Headless where
 
 -- | This just actually a specialization of the free applicative.
 --   Check out @Control.Applicative.Free@ in the @free@ library to
---   learn more about this.
+--   learn more about this. The meanings of the fields are documented
+--   slightly more in the source code. Unfortunately, haddock does not
+--   play nicely with GADTs.
 data Decoding f content a where
-  DecodingPure :: !a -- ^ function
+  DecodingPure :: !a -- function
                -> Decoding f content a
-  DecodingAp :: !(f content) -- ^ header
-             -> !(content -> Either String a) -- ^ decoding function
-             -> !(Decoding f content (a -> b)) -- ^ next decoding
+  DecodingAp :: !(f content) -- header
+             -> !(content -> Either String a) -- decoding function
+             -> !(Decoding f content (a -> b)) -- next decoding
              -> Decoding f content b
 
 instance Functor (Decoding f content) where

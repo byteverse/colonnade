@@ -23,7 +23,6 @@ library
     Colonnade.Decoding.Text
     Colonnade.Decoding.ByteString.Char8
     Colonnade.Internal
-    Colonnade.Internal.Ap
   build-depends:
       base >= 4.7 && < 5
     , contravariant
