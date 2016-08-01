@@ -1,5 +1,5 @@
 name:                siphon
-version:             0.1
+version:             0.2
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
@@ -26,7 +26,7 @@ library
     Siphon.Internal.Text
   build-depends:
       base >= 4.7 && < 5
-    , colonnade
+    , colonnade >= 0.4 && < 0.5
     , text
     , bytestring
     , contravariant
