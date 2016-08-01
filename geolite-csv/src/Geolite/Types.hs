@@ -23,6 +23,7 @@ data City = City
   , citySubdivision1Name :: Text
   , citySubdivision2IsoCode :: Text
   , citySubdivision2Name :: Text
+  , cityName :: Text
   , cityMetroCode :: Maybe Int
   , cityTimeZone :: Text
   } deriving (Show,Read,Eq,Ord)

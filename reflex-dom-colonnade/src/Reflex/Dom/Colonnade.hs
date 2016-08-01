@@ -1,6 +1,12 @@
 {-# LANGUAGE DeriveFunctor #-}
 
-module Reflex.Dom.Colonnade where
+module Reflex.Dom.Colonnade
+  ( Cell(..)
+  , cell
+  , basic
+  , dynamic
+  , dynamicEventful
+  ) where
 
 import Colonnade.Types
 import Control.Monad
@@ -17,13 +23,15 @@ import qualified Data.Map as Map
 cell :: m b -> Cell m b
 cell = Cell Map.empty
 
+-- data NewCell b = NewCell
+--   { newCellAttrs :: !(Map String String)
+--   , newCellContents :: !b
+--   } deriving (Functor)
+
 data Cell m b = Cell
   { cellAttrs :: !(Map String String)
   , cellContents :: !(m b)
   } deriving (Functor)
-
--- instance Functor (Cell m) where
---   fmap f (a
 
 basic :: (MonadWidget t m, Foldable f)
       => Map String String -- ^ Table element attributes
@@ -50,16 +58,16 @@ dynamic :: (MonadWidget t m, Foldable f)
         -> m ()
 dynamic tableAttrs as encoding@(Encoding v) = do
   elAttr "table" tableAttrs $ do
-    theadBuild encoding
-    el "tbody" $ forM_ as $ \a -> do
+    b1 <- theadBuild encoding
+    b2 <- el "tbody" $ forM_ as $ \a -> do
       el "tr" $ forM_ v $ \(OneEncoding _ encode) -> do
         dynPair <- mapDyn encode a
         dynAttrs <- mapDyn cellAttrs dynPair
         dynContent <- mapDyn cellContents dynPair
-        _ <- elDynAttr "td" dynAttrs $ dyn dynContent
-        return ()
+        elDynAttr "td" dynAttrs $ dyn dynContent
+    return (mappend b1 b2)
 
-dynamicEventful :: (MonadWidget t m, Traversable f, Semigroup e)
+dynamicEventful :: (MonadWidget t m, Foldable f, Semigroup e)
   => Map String String -- ^ Table element attributes
   -> f (Dynamic t a) -- ^ Dynamic values
   -> Encoding Headed (Cell m (Event t e)) a -- ^ Encoding of a value into cells
@@ -67,13 +75,57 @@ dynamicEventful :: (MonadWidget t m, Traversable f, Semigroup e)
 dynamicEventful tableAttrs as encoding@(Encoding v) = do
   elAttr "table" tableAttrs $ do
     b1 <- theadBuild encoding
-    b2 <- el "tbody" $ forM as $ \a -> do
-      el "tr" $ forM v $ \(OneEncoding _ encode) -> do
+    b2 <- el "tbody" $ flip foldMapM as $ \a -> do
+      el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
         dynPair <- mapDyn encode a
         dynAttrs <- mapDyn cellAttrs dynPair
         dynContent <- mapDyn cellContents dynPair
         e <- elDynAttr "td" dynAttrs $ dyn dynContent
         -- TODO: This might actually be wrong. Revisit this.
         switchPromptly never e
-    return (mappend b1 (mconcat $ toList $ mconcat $ toList b2))
+    return (mappend b1 b2)
+
+foldMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+foldMapM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty
+
+foldAlternativeM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+foldAlternativeM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty
+
+-- dynamicEventfulWith :: (MonadWidget t m, Foldable f, Semigroup e, Monoid b)
+--   => (e -> b)
+--   -> Map String String -- ^ Table element attributes
+--   -> f (Dynamic t a) -- ^ Dynamic values
+--   -> Encoding Headed (Cell m (Event t e)) a -- ^ Encoding of a value into cells
+--   -> m (Event t e)
+-- dynamicEventfulWith f tableAttrs as encoding@(Encoding v) = do
+--   elAttr "table" tableAttrs $ do
+--     b1 <- theadBuild encoding
+--     b2 <- el "tbody" $ flip foldMapM as $ \a -> do
+--       el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
+--         dynPair <- mapDyn encode a
+--         dynAttrs <- mapDyn cellAttrs dynPair
+--         dynContent <- mapDyn cellContents dynPair
+--         e <- elDynAttr "td" dynAttrs $ dyn dynContent
+--         flattenedEvent <- switchPromptly never e
+--         return (f flattenedEvent)
+--     return (mappend b1 b2)
+--
+-- dynamicEventfulMany :: (MonadWidget t m, Foldable f, Alternative g)
+--   => Map String String -- ^ Table element attributes
+--   -> f (Dynamic t a) -- ^ Dynamic values
+--   -> Encoding Headed (NewCell (g (Compose m (Event t)))) a -- ^ Encoding of a value into cells
+--   -> m (g (Event t e))
+-- dynamicEventfulMany tableAttrs as encoding@(Encoding v) = do
+--   elAttr "table" tableAttrs $ do
+--     -- b1 <- theadBuild encoding
+--     b2 <- el "tbody" $ flip foldMapM as $ \a -> do
+--       el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
+--         dynPair <- mapDyn encode a
+--         dynAttrs <- mapDyn cellAttrs dynPair
+--         dynContent <- mapDyn cellContents dynPair
+--         e <- elDynAttr "td" dynAttrs $ dyn dynContent
+--         switchPromptly never e
+--     return (mappend b1 b2)
+
+-- data Update f = UpdateName (f Text) | UpdateAge (f Int) | ...
 

@@ -33,6 +33,7 @@ decodingCity = City
   <*> CD.headed "subdivision_1_name" CDT.text
   <*> CD.headed "subdivision_2_iso_code" CDT.text
   <*> CD.headed "subdivision_2_name" CDT.text
+  <*> CD.headed "city_name" CDT.text
   <*> CD.headed "metro_code" (CDT.optional CDT.int)
   <*> CD.headed "time_zone" CDT.text
 

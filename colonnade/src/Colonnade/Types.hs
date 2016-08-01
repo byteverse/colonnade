@@ -105,6 +105,7 @@ instance Applicative (Decoding f content) where
   DecodingPure f <*> y = fmap f y
   DecodingAp h c y <*> z = DecodingAp h c (flip <$> y <*> z)
 
+-- | Encodes a header and a cell.
 data OneEncoding f content a = OneEncoding
   { oneEncodingHead   :: !(f content)
   , oneEncodingEncode :: !(a -> content)
