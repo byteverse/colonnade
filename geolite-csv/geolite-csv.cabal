@@ -1,6 +1,6 @@
 name:                geolite-csv
-version:             0.1.0
-synopsis:            Initial project template from stack
+version:             0.2
+synopsis:            Geolite CSV Parser
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade
 license:             BSD3
