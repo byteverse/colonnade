@@ -10,13 +10,15 @@ module Reflex.Dom.Colonnade
 
 import Colonnade.Types
 import Control.Monad
+import Data.Maybe
 import Data.Foldable
-import Reflex (Dynamic,Event,switchPromptly,never)
+import Reflex (Dynamic,Event,switchPromptly,never,leftmost)
 import Reflex.Dynamic (mapDyn)
 import Reflex.Dom (MonadWidget)
 import Reflex.Dom.Widget.Basic
 import Data.Map (Map)
 import Data.Semigroup (Semigroup)
+import qualified Data.Vector as Vector
 import qualified Colonnade.Encoding as Encoding
 import qualified Data.Map as Map
 
@@ -44,12 +46,43 @@ basic tableAttrs as encoding = do
     el "tbody" $ forM_ as $ \a -> do
       el "tr" $ Encoding.runRowMonadic encoding (elFromCell "td") a
 
+interRowContent :: (MonadWidget t m, Foldable f)
+  => String
+  -> String
+  -> f a
+  -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
+  -> m ()
+interRowContent tableClass tdExtraClass as encoding@(Encoding v) = do
+  let vlen = Vector.length v
+  elAttr "table" (Map.singleton "class" tableClass) $ do
+    -- Discarding this result is technically the wrong thing
+    -- to do, but I cannot imagine why anyone would want to
+    -- drop down content under the heading.
+    _ <- theadBuild_ encoding
+    el "tbody" $ forM_ as $ \a -> do
+      e' <- el "tr" $ do
+        e <- Encoding.runRowMonadicWith never const encoding (elFromCell "td") a
+        let e' = flip fmap e $ \mwidg -> case mwidg of
+              Nothing -> return ()
+              Just widg -> el "tr" $ do
+                elAttr "td" ( Map.fromList
+                    [ ("class",tdExtraClass)
+                    , ("colspan",show vlen)
+                    ]
+                  ) widg
+        return e'
+      widgetHold (return ()) e'
+
 elFromCell :: MonadWidget t m => String -> Cell m b -> m b
 elFromCell name (Cell attrs contents) = elAttr name attrs contents
 
 theadBuild :: (MonadWidget t m, Monoid b) => Encoding Headed (Cell m b) a -> m b
 theadBuild encoding = el "thead" . el "tr"
   $ Encoding.runHeaderMonadic encoding (elFromCell "th")
+
+theadBuild_ :: (MonadWidget t m) => Encoding Headed (Cell m b) a -> m ()
+theadBuild_ encoding = el "thead" . el "tr"
+  $ Encoding.runHeaderMonadic_  encoding (elFromCell "th")
 
 dynamic :: (MonadWidget t m, Foldable f)
         => Map String String -- ^ Table element attributes
