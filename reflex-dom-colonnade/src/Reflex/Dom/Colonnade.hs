@@ -23,6 +23,8 @@ import qualified Data.Vector as Vector
 import qualified Colonnade.Encoding as Encoding
 import qualified Data.Map as Map
 
+-- | Convenience function for creating a 'Cell' representing
+--   a @td@ or @th@ with no attributes.
 cell :: m b -> Cell m b
 cell = Cell Map.empty
 
@@ -36,6 +38,7 @@ data Cell m b = Cell
   , cellContents :: !(m b)
   } deriving (Functor)
 
+-- | A static table
 basic :: (MonadWidget t m, Foldable f)
       => Map String String -- ^ Table element attributes
       -> f a -- ^ Values
@@ -47,13 +50,15 @@ basic tableAttrs as encoding = do
     el "tbody" $ forM_ as $ \a -> do
       el "tr" $ Encoding.runRowMonadic encoding (elFromCell "td") a
 
-interRowContent :: (MonadWidget t m, Foldable f)
+-- | Table with cells that can create expanded content
+--   between the rows.
+expandable :: (MonadWidget t m, Foldable f)
   => String
   -> String
   -> f a
   -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
   -> m ()
-interRowContent tableClass tdExtraClass as encoding@(Encoding v) = do
+expandable tableClass tdExtraClass as encoding@(Encoding v) = do
   let vlen = Vector.length v
   elAttr "table" (Map.singleton "class" tableClass) $ do
     -- Discarding this result is technically the wrong thing
@@ -73,6 +78,16 @@ interRowContent tableClass tdExtraClass as encoding@(Encoding v) = do
                   ) widg
         return e'
       widgetHold (return ()) e'
+
+-- TODO: figure out how to write this. It will need to reset
+-- the interrow content whenever its corresponding row changes.
+--
+-- dynamicExpandable :: (MonadWidget t m, Foldable f)
+--   => String
+--   -> String
+--   -> f (Dynamic t a)
+--   -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
+--   -> m ()
 
 elFromCell :: MonadWidget t m => String -> Cell m b -> m b
 elFromCell name (Cell attrs contents) = elAttr name attrs contents
