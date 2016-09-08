@@ -32,8 +32,6 @@ runRowMonadic :: (Monad m, Monoid b)
               -> a
               -> m b
 runRowMonadic (Encoding v) g a =
-  --   fmap (mconcat . Vector.toList)
-  -- $ Vector.forM v
   flip Internal.foldMapM v
   $ \e -> g (oneEncodingEncode e a)
 

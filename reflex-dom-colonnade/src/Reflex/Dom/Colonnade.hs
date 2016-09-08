@@ -6,6 +6,7 @@ module Reflex.Dom.Colonnade
   , basic
   , dynamic
   , dynamicEventful
+  , interRowContent
   ) where
 
 import Colonnade.Types
