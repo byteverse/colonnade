@@ -1,7 +1,7 @@
 {-# LANGUAGE DeriveFunctor #-}
 module Colonnade.Internal where
 
-import Data.Foldable (foldrM)
+import Data.Foldable (foldrM,foldlM)
 
 newtype EitherWrap a b = EitherWrap
   { getEitherWrap :: Either a b
@@ -18,6 +18,6 @@ mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft _ (Right a) = Right a
 mapLeft f (Left a) = Left (f a)
 
-foldMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
-foldMapM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty
+foldlMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+foldlMapM f = foldlM (\b a -> fmap (mappend b) (f a)) mempty
 

@@ -124,8 +124,8 @@ dynamicEventful :: (MonadWidget t m, Foldable f, Semigroup e)
 dynamicEventful tableAttrs as encoding@(Encoding v) = do
   elAttr "table" tableAttrs $ do
     b1 <- theadBuild encoding
-    b2 <- el "tbody" $ flip foldMapM as $ \a -> do
-      el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
+    b2 <- el "tbody" $ flip foldlMapM as $ \a -> do
+      el "tr" $ flip foldlMapM v $ \(OneEncoding _ encode) -> do
         dynPair <- mapDyn encode a
         dynAttrs <- mapDyn cellAttrs dynPair
         dynContent <- mapDyn cellContents dynPair
@@ -134,8 +134,11 @@ dynamicEventful tableAttrs as encoding@(Encoding v) = do
         switchPromptly never e
     return (mappend b1 b2)
 
-foldMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
-foldMapM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty
+-- foldMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+-- foldMapM f = foldlM (\b a -> fmap (flip mappend b) (f a)) mempty
+
+foldlMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+foldlMapM f = foldlM (\b a -> fmap (mappend b) (f a)) mempty
 
 foldAlternativeM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
 foldAlternativeM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty

@@ -32,7 +32,7 @@ runRowMonadic :: (Monad m, Monoid b)
               -> a
               -> m b
 runRowMonadic (Encoding v) g a =
-  flip Internal.foldMapM v
+  flip Internal.foldlMapM v
   $ \e -> g (oneEncodingEncode e a)
 
 runRowMonadicWith :: (Monad m)

@@ -1,5 +1,5 @@
 name:                colonnade
-version:             0.4.1
+version:             0.4.4
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
