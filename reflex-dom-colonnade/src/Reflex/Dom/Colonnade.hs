@@ -53,10 +53,11 @@ basic tableAttrs as encoding = do
 -- | Table with cells that can create expanded content
 --   between the rows.
 expandable :: (MonadWidget t m, Foldable f)
-  => String
-  -> String
-  -> f a
+  => String -- ^ Table class
+  -> String -- ^ Class of expanded table rows
+  -> f a -- ^ Values
   -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
+     -- ^ Encoding into cells with events that can fire to create additional content under the row
   -> m ()
 expandable tableClass tdExtraClass as encoding@(Encoding v) = do
   let vlen = Vector.length v

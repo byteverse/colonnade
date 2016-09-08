@@ -43,7 +43,7 @@ runRowMonadicWith :: (Monad m)
               -> a
               -> m b
 runRowMonadicWith bempty bappend (Encoding v) g a =
-  foldrM (\e br -> do
+  foldlM (\br e -> do
     bl <- g (oneEncodingEncode e a)
     return (bappend bl br)
   ) bempty v
