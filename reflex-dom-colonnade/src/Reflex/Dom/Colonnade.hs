@@ -68,8 +68,9 @@ expandable tableClass tdExtraClass as encoding@(Encoding v) = do
     _ <- theadBuild_ encoding
     el "tbody" $ forM_ as $ \a -> do
       e' <- el "tr" $ do
-        e <- Encoding.runRowMonadicWith never const encoding (elFromCell "td") a
-        let e' = flip fmap e $ \mwidg -> case mwidg of
+        elist <- Encoding.runRowMonadicWith [] (++) encoding (fmap (\a -> [a]) . elFromCell "td") a
+        let e = leftmost elist
+            e' = flip fmap e $ \mwidg -> case mwidg of
               Nothing -> return ()
               Just widg -> el "tr" $ do
                 elAttr "td" ( Map.fromList

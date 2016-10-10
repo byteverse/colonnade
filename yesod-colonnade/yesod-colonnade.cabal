@@ -1,7 +1,7 @@
-name:                reflex-dom-colonnade
-version:             0.4.5
-synopsis:            Use colonnade with reflex-dom
-description:         Please see README.md
+name:                yesod-colonnade
+version:             0.1
+synopsis:            Helper functions for using yesod with colonnade
+description:         Yesod and colonnade
 homepage:            https://github.com/andrewthad/colonnade#readme
 license:             BSD3
 license-file:        LICENSE
@@ -15,18 +15,13 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    Reflex.Dom.Colonnade
+    Yesod.Colonnade
   build-depends:
       base >= 4.7 && < 5
-    , colonnade >= 0.4.4
-    , contravariant
-    , vector
-    , reflex
-    , reflex-dom
-    , containers
-    , semigroups
-  default-language: Haskell2010
-  ghc-options:      -Wall
+    , colonnade
+    , yesod-core
+    , text
+  default-language:    Haskell2010
 
 source-repository head
   type:     git

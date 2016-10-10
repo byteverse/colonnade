@@ -43,8 +43,8 @@ runRowMonadicWith :: (Monad m)
               -> a
               -> m b
 runRowMonadicWith bempty bappend (Encoding v) g a =
-  foldlM (\br e -> do
-    bl <- g (oneEncodingEncode e a)
+  foldlM (\bl e -> do
+    br <- g (oneEncodingEncode e a)
     return (bappend bl br)
   ) bempty v
 
@@ -52,12 +52,29 @@ runHeader :: (c1 -> c2) -> Encoding Headed c1 a -> Vector c2
 runHeader g (Encoding v) =
   Vector.map (g . getHeaded . oneEncodingHead) v
 
+-- | This function is a helper for abusing 'Foldable' to optionally
+--   render a header. Its future is uncertain.
+runHeaderMonadicGeneral :: (Monad m, Monoid b, Foldable h)
+  => Encoding h content a
+  -> (content -> m b)
+  -> m b
+runHeaderMonadicGeneral (Encoding v) g = id
+  $ fmap (mconcat . Vector.toList)
+  $ Vector.mapM (Internal.foldlMapM g . oneEncodingHead) v
+
 runHeaderMonadic :: (Monad m, Monoid b)
                  => Encoding Headed content a
                  -> (content -> m b)
                  -> m b
 runHeaderMonadic (Encoding v) g =
   fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneEncodingHead) v
+
+runHeaderMonadicGeneral_ :: (Monad m, Monoid b, Foldable h)
+  => Encoding h content a
+  -> (content -> m b)
+  -> m ()
+runHeaderMonadicGeneral_ (Encoding v) g =
+  Vector.mapM_ (Internal.foldlMapM g . oneEncodingHead) v
 
 runHeaderMonadic_ ::
      (Monad m)

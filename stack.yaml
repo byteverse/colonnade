@@ -37,6 +37,7 @@ resolver: lts-6.4
 # will not be run. This is useful for tweaking upstream packages.
 packages:
 - 'colonnade'
+- 'yesod-colonnade'
 - 'reflex-dom-colonnade'
 - 'siphon'
 - 'geolite-csv'
@@ -50,7 +51,7 @@ extra-deps:
 - 'haskell-src-exts-1.16.0.1'
 - 'syb-0.5.1'
 - 'ip-0.8.4'
-
+- 'lmdb-0.2.5'
 
 
 # Override default flag values for local packages and extra-deps
