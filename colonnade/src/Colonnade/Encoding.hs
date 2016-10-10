@@ -26,6 +26,14 @@ runRow :: (c1 -> c2) -> Encoding f c1 a -> a -> Vector c2
 runRow g (Encoding v) a = flip Vector.map v $
   \(OneEncoding _ encode) -> g (encode a)
 
+runBothMonadic_ :: Monad m
+  => Encoding Headed content a
+  -> (content -> content -> m b)
+  -> a
+  -> m ()
+runBothMonadic_ (Encoding v) g a =
+  forM_ v $ \(OneEncoding (Headed h) encode) -> g h (encode a)
+
 runRowMonadic :: (Monad m, Monoid b)
               => Encoding f content a
               -> (content -> m b)
@@ -34,6 +42,14 @@ runRowMonadic :: (Monad m, Monoid b)
 runRowMonadic (Encoding v) g a =
   flip Internal.foldlMapM v
   $ \e -> g (oneEncodingEncode e a)
+
+runRowMonadic_ :: Monad m
+  => Encoding f content a
+  -> (content -> m b)
+  -> a
+  -> m ()
+runRowMonadic_ (Encoding v) g a =
+  forM_ v $ \e -> g (oneEncodingEncode e a)
 
 runRowMonadicWith :: (Monad m)
               => b

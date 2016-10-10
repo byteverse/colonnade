@@ -3,12 +3,17 @@
 
 module Yesod.Colonnade
   ( table
+  , listItems
+  , Cell(..)
+  , cell
+  , textCell
   ) where
 
 import Yesod.Core
 import Colonnade.Types
 import Data.Text (Text)
 import Control.Monad
+import Data.String (IsString(..))
 import qualified Colonnade.Encoding as Encoding
 
 data Cell site = Cell
@@ -16,12 +21,38 @@ data Cell site = Cell
   , cellContents :: !(WidgetT site IO ())
   }
 
+instance IsString (Cell site) where
+  fromString = Cell [] . fromString
+
 cell :: WidgetT site IO () -> Cell site
 cell = Cell []
 
 textCell :: Text -> Cell site
 textCell = cell . toWidget . toHtml
 
+-- | This determines the attributes that are added
+--   to the individual @li@s by concatenating the header\'s
+--   attributes with the data\'s attributes.
+listItems :: Foldable f
+  => (WidgetT site IO () -> WidgetT site IO ())
+     -- ^ Wrapper for items, often @ul@
+  -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
+     -- ^ Combines header with data
+  -> Encoding Headed (Cell site) a
+     -- ^ How to encode data as a row
+  -> f a
+     -- ^ Rows of data
+  -> WidgetT site IO ()
+listItems ulWrap combine enc xs =
+  forM_ xs $ ulWrap . Encoding.runBothMonadic_ enc
+    (\(Cell ha hc) (Cell ba bc) ->
+      li (ha ++ ba) (combine hc bc)
+    )
+
+-- | If you are using the bootstrap css framework, then you may want
+--   to call this with the first argument as:
+--
+--   > table [("class","table table-striped")] ...
 table :: Foldable f
   => [(Text,Text)] -- ^ Attributes of @table@ element
   -> Encoding Headed (Cell site) a -- ^ How to encode data as a row
@@ -53,7 +84,8 @@ widgetFromCell ::
 widgetFromCell f (Cell attrs contents) =
   f attrs contents
 
-tr,tbody,thead,tableEl,td,th :: [(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ()
+tr,tbody,thead,tableEl,td,th,ul,li ::
+  [(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ()
 tableEl str b = [whamlet|
   <table *{str}>^{b}
 |]
@@ -71,5 +103,11 @@ th str b = [whamlet|
 |]
 td str b = [whamlet|
   <td *{str}>^{b}
+|]
+ul str b = [whamlet|
+  <ul *{str}>^{b}
+|]
+li str b = [whamlet|
+  <li *{str}>^{b}
 |]
 
