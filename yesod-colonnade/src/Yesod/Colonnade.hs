@@ -6,7 +6,9 @@ module Yesod.Colonnade
   , listItems
   , Cell(..)
   , cell
+  , stringCell
   , textCell
+  , builderCell
   ) where
 
 import Yesod.Core
@@ -15,6 +17,8 @@ import Data.Text (Text)
 import Control.Monad
 import Data.String (IsString(..))
 import qualified Colonnade.Encoding as Encoding
+import qualified Data.Text.Lazy as LText
+import qualified Data.Text.Lazy.Builder as TBuilder
 
 data Cell site = Cell
   { cellAttrs :: ![(Text,Text)]
@@ -22,13 +26,19 @@ data Cell site = Cell
   }
 
 instance IsString (Cell site) where
-  fromString = Cell [] . fromString
+  fromString = stringCell
 
 cell :: WidgetT site IO () -> Cell site
 cell = Cell []
 
+stringCell :: String -> Cell site
+stringCell = cell . fromString
+
 textCell :: Text -> Cell site
 textCell = cell . toWidget . toHtml
+
+builderCell :: TBuilder.Builder -> Cell site
+builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 
 -- | This determines the attributes that are added
 --   to the individual @li@s by concatenating the header\'s

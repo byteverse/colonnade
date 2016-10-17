@@ -1,12 +1,22 @@
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE UndecidableInstances #-}
 
 module Reflex.Dom.Colonnade
-  ( Cell(..)
-  , cell
+  (
+  -- * Types
+    Cell(..)
+  -- * Table Encoders
   , basic
   , dynamic
   , dynamicEventful
   , expandable
+  , listItems
+    -- * Cell Functions
+  , cell
+  , stringCell
+  , textCell
+  , builderCell
   ) where
 
 import Colonnade.Types
@@ -19,14 +29,28 @@ import Reflex.Dom (MonadWidget)
 import Reflex.Dom.Widget.Basic
 import Data.Map (Map)
 import Data.Semigroup (Semigroup)
+import Data.Text (Text)
+import Data.String (IsString(..))
 import qualified Data.Vector as Vector
 import qualified Colonnade.Encoding as Encoding
 import qualified Data.Map as Map
+import qualified Data.Text as Text
+import qualified Data.Text.Lazy as LText
+import qualified Data.Text.Lazy.Builder as TBuilder
 
 -- | Convenience function for creating a 'Cell' representing
 --   a @td@ or @th@ with no attributes.
 cell :: m b -> Cell m b
 cell = Cell Map.empty
+
+stringCell :: MonadWidget t m => String -> Cell m ()
+stringCell = cell . text
+
+textCell :: MonadWidget t m => Text -> Cell m ()
+textCell = cell . text . Text.unpack
+
+builderCell :: MonadWidget t m => TBuilder.Builder -> Cell m ()
+builderCell = textCell . LText.toStrict . TBuilder.toLazyText
 
 -- data NewCell b = NewCell
 --   { newCellAttrs :: !(Map String String)
@@ -38,13 +62,41 @@ data Cell m b = Cell
   , cellContents :: !(m b)
   } deriving (Functor)
 
+-- | This instance is requires @UndecidableInstances@ and is kind of
+--   bad, but @reflex@ already abusing type classes so much that it
+--   doesn\'t seem too terrible to add this to the mix.
+instance (MonadWidget t m, a ~ ()) => IsString (Cell m a) where
+  fromString = stringCell
+
+-- | This determines the attributes that are added
+--   to the individual @li@s by concatenating the header\'s
+--   attributes with the data\'s attributes.
+listItems :: (Foldable f, MonadWidget t m)
+  => (m () -> m ())
+     -- ^ Wrapper for items, often @ul@
+  -> (m () -> m () -> m ())
+     -- ^ Combines header with data
+  -> Encoding Headed (Cell m ()) a
+     -- ^ How to encode data as a row
+  -> f a
+     -- ^ Rows of data
+  -> m ()
+listItems ulWrap combine enc xs =
+  forM_ xs $ ulWrap . Encoding.runBothMonadic_ enc
+    (\(Cell ha hc) (Cell ba bc) ->
+      -- Consider doing something better than union for
+      -- combining the two maps. For example, what if they
+      -- both have a class.
+      elAttr "li" (Map.union ha ba) (combine hc bc)
+    )
+
 -- | A static table
 basic :: (MonadWidget t m, Foldable f)
       => Map String String -- ^ Table element attributes
-      -> f a -- ^ Values
       -> Encoding Headed (Cell m ()) a -- ^ Encoding of a value into cells
+      -> f a -- ^ Values
       -> m ()
-basic tableAttrs as encoding = do
+basic tableAttrs encoding as = do
   elAttr "table" tableAttrs $ do
     theadBuild encoding
     el "tbody" $ forM_ as $ \a -> do
