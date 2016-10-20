@@ -1,5 +1,5 @@
 name:                colonnade
-version:             0.4.5
+version:             0.4.6
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
@@ -25,11 +25,22 @@ library
     Colonnade.Internal
   build-depends:
       base >= 4.7 && < 5
-    , contravariant
-    , vector
-    , text
-    , bytestring
+    , contravariant >= 1.2 && < 1.5
+    , vector >= 0.10 && < 0.12
+    , text >= 1.0 && < 1.3
+    , bytestring >= 0.10 && < 0.11
   default-language:    Haskell2010
+  ghc-options: -Wall
+
+test-suite test
+  type:             exitcode-stdio-1.0
+  hs-source-dirs:   test
+  main-is:          Main.hs
+  build-depends:
+      base >= 4.7 && <= 5
+    , colonnade
+    , doctest
+  default-language: Haskell2010
 
 source-repository head
   type:     git
