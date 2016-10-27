@@ -6,6 +6,7 @@ module Colonnade.Encoding
     -- * Create
     headed
   , headless
+  , singleton
     -- * Transform
   , fromMaybe
   , columns
