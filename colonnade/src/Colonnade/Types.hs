@@ -23,11 +23,11 @@ import Control.Exception (Exception)
 import Data.Typeable (Typeable)
 import qualified Data.Vector as Vector
 
--- | Isomorphic to 'Identity'
+-- | This type is isomorphic to 'Identity'.
 newtype Headed a = Headed { getHeaded :: a }
   deriving (Eq,Ord,Functor,Show,Read,Foldable)
 
--- | Isomorphic to 'Proxy'
+-- | This type is isomorphic to 'Proxy'
 data Headless a = Headless
   deriving (Eq,Ord,Functor,Show,Read,Foldable)
 
@@ -116,8 +116,25 @@ data OneEncoding f content a = OneEncoding
 instance Contravariant (OneEncoding f content) where
   contramap f (OneEncoding h e) = OneEncoding h (e . f)
 
-newtype Encoding f content a = Encoding
-  { getEncoding :: Vector (OneEncoding f content a)
+-- | An columnar encoding of @a@. The type variable @f@ determines what
+--   is present in each column in the header row. It is typically instantiated
+--   to 'Headed' and occasionally to 'Headless'. There is nothing that
+--   restricts it to these two types, although they satisfy the majority
+--   of use cases. The type variable @c@ is the content type. This can
+--   be @Text@, @String@, or @ByteString@. In the companion libraries
+--   @reflex-dom-colonnade@ and @yesod-colonnade@, additional types
+--   that represent HTML with element attributes are provided that serve
+--   as the content type.
+--
+--   Internally, an 'Encoding' is represented as a 'Vector' of individual
+--   column encodings. It is possible to use any collection type with
+--   'Alternative' and 'Foldable' instances. However, 'Vector' was chosen to
+--   optimize the data structure for the use case of building the structure
+--   once and then folding over it many times. It is recommended that
+--   'Encoding's are defined at the top-level so that GHC avoid reconstructing
+--   them every time they are used.
+newtype Encoding f c a = Encoding
+  { getEncoding :: Vector (OneEncoding f c a)
   } deriving (Monoid)
 
 instance Contravariant (Encoding f content) where

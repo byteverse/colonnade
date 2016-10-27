@@ -1,6 +1,5 @@
 -- | Build backend-agnostic columnar encodings that can be used to visualize data.
 
-
 module Colonnade.Encoding
   ( -- * Example
     -- $setup
@@ -10,6 +9,8 @@ module Colonnade.Encoding
     -- * Transform
   , fromMaybe
   , columns
+  , bool
+  , replaceWhen
   , mapContent
     -- * Render
   , runRow
@@ -32,6 +33,7 @@ import Data.Foldable
 import Data.Monoid (Endo(..))
 import Control.Monad
 import Data.Functor.Contravariant
+import qualified Data.Bool
 import qualified Data.Maybe
 import qualified Data.List as List
 import qualified Data.Vector as Vector
@@ -39,19 +41,25 @@ import qualified Colonnade.Internal as Internal
 
 -- $setup
 --
+-- First, let\'s bring in some neccessary imports that will be
+-- used for the remainder of the examples in the docs:
+--
+-- >>> import Data.Monoid (mconcat,(<>))
+-- >>> import Data.Functor.Contravariant (contramap)
+--
 -- Assume that the data we wish to encode is:
 --
--- >>> data Color = Red | Green | Blue deriving (Show)
--- >>> data Person = Person { personName :: String, personAge :: Int }
--- >>> data House = House { houseColor :: Color, housePrice :: Int }
+-- >>> data Color = Red | Green | Blue deriving (Show,Eq)
+-- >>> data Person = Person { name :: String, age :: Int }
+-- >>> data House = House { color :: Color, price :: Int }
 --
 -- One potential columnar encoding of a @Person@ would be:
 --
 -- >>> :{
 -- let encodingPerson :: Encoding Headed String Person
 --     encodingPerson = mconcat
---       [ headed "Name" personName
---       , headed "Age" (show . personAge)
+--       [ headed "Name" name
+--       , headed "Age" (show . age)
 --       ]
 -- :}
 --
@@ -60,7 +68,7 @@ import qualified Colonnade.Internal as Internal
 -- to build a table:
 --
 -- >>> let people = [Person "David" 63, Person "Ava" 34, Person "Sonia" 12]
--- >>> putStr $ ascii encodingPerson people
+-- >>> putStr (ascii encodingPerson people)
 -- +-------+-----+
 -- | Name  | Age |
 -- +-------+-----+
@@ -71,31 +79,37 @@ import qualified Colonnade.Internal as Internal
 --
 -- Similarly, we can build a table of houses with:
 --
+-- >>> let showDollar = (('$':) . show) :: Int -> String
 -- >>> :{
 -- let encodingHouse :: Encoding Headed String House
 --     encodingHouse = mconcat
---       [ headed "Color" (show . houseColor)
---       , headed "Price" (('$':) . show . housePrice)
+--       [ headed "Color" (show . color)
+--       , headed "Price" (showDollar . price)
 --       ]
 -- :}
 --
--- >>> let houses = [House Green 170000, House Blue 115000]
--- >>> putStr $ ascii encodingHouse houses
+-- >>> let houses = [House Green 170000, House Blue 115000, House Green 150000]
+-- >>> putStr (ascii encodingHouse houses)
 -- +-------+---------+
 -- | Color | Price   |
 -- +-------+---------+
 -- | Green | $170000 |
 -- | Blue  | $115000 |
+-- | Green | $150000 |
 -- +-------+---------+
 
 
--- | A column with a header.
-headed :: content -> (a -> content) -> Encoding Headed content a
-headed h f = Encoding (Vector.singleton (OneEncoding (Headed h) f))
+-- | A single column with a header.
+headed :: c -> (a -> c) -> Encoding Headed c a
+headed h = singleton (Headed h)
 
--- | A column without a header.
-headless :: (a -> content) -> Encoding Headless content a
-headless f = Encoding (Vector.singleton (OneEncoding Headless f))
+-- | A single column without a header.
+headless :: (a -> c) -> Encoding Headless c a
+headless = singleton Headless
+
+-- | A single column with any kind of header. This is not typically needed.
+singleton :: f c -> (a -> c) -> Encoding f c a
+singleton h = Encoding . Vector.singleton . OneEncoding h
 
 -- | Lift a column over a 'Maybe'. For example, if some people
 --   have houses and some do not, the data that pairs them together
@@ -121,7 +135,7 @@ headless f = Encoding (Vector.singleton (OneEncoding Headless f))
 -- >>>       ]
 -- >>> :}
 --
--- >>> putStr $ ascii encodingOwners owners
+-- >>> putStr (ascii encodingOwners owners)
 -- +--------+-----+-------+---------+
 -- | Name   | Age | Color | Price   |
 -- +--------+-----+-------+---------+
@@ -133,18 +147,61 @@ fromMaybe :: c -> Encoding f c a -> Encoding f c (Maybe a)
 fromMaybe c (Encoding v) = Encoding $ flip Vector.map v $
   \(OneEncoding h encode) -> OneEncoding h (maybe c encode)
 
--- | Convert a 'Vector' of @b@ values into a columnar encoding of
---   the same size.
-columns :: (b -> a -> c) -- ^ Cell content function
-        -> (b -> f c) -- ^ Header content function
-        -> Vector b -- ^ Basis for column encodings
-        -> Encoding f c a
-columns getCell getHeader bs =
-  Encoding $ Vector.map (\b -> OneEncoding (getHeader b) (getCell b)) bs
+-- | Convert a collection of @b@ values into a columnar encoding of
+--   the same size. Suppose we decide to show a house\'s color
+--   by putting a check mark in the column corresponding to
+--   the color instead of by writing out the name of the color:
+--
+-- >>> let allColors = [Red,Green,Blue]
+-- >>> let encColor = columns (\c1 c2 -> if c1 == c2 then "✓" else "") (Headed . show) allColors
+-- >>> :t encColor
+-- encColor :: Encoding Headed [Char] Color
+-- >>> let encHouse = headed "Price" (showDollar . price) <> contramap color encColor
+-- >>> :t encHouse
+-- encHouse :: Encoding Headed [Char] House
+-- >>> putStr (ascii encHouse houses)
+-- +---------+-----+-------+------+
+-- | Price   | Red | Green | Blue |
+-- +---------+-----+-------+------+
+-- | $170000 |     | ✓     |      |
+-- | $115000 |     |       | ✓    |
+-- | $150000 |     | ✓     |      |
+-- +---------+-----+-------+------+
+columns :: Foldable g
+  => (b -> a -> c) -- ^ Cell content function
+  -> (b -> f c) -- ^ Header content function
+  -> g b -- ^ Basis for column encodings
+  -> Encoding f c a
+columns getCell getHeader = id
+  . Encoding
+  . Vector.map (\b -> OneEncoding (getHeader b) (getCell b))
+  . Vector.fromList
+  . toList
 
+bool ::
+     f c -- ^ Heading
+  -> (a -> Bool) -- ^ Predicate
+  -> (a -> c) -- ^ Contents when predicate is false
+  -> (a -> c) -- ^ Contents when predicate is true
+  -> Encoding f c a
+bool h p onTrue onFalse = singleton h (Data.Bool.bool <$> onFalse <*> onTrue <*> p)
 
--- | Technically, 'Encoding' is a @Bifunctor@. This maps covariantly over the
--- content type. The instance will be added once GHC8 has its next release.
+replaceWhen ::
+     c
+  -> (a -> Bool)
+  -> Encoding f c a
+  -> Encoding f c a
+replaceWhen newContent p (Encoding v) = Encoding
+  ( Vector.map
+    (\(OneEncoding h encode) -> OneEncoding h $ \a ->
+      if p a then newContent else encode a
+    ) v
+  )
+
+-- | 'Encoding' is covariant in its content type. Consequently, it can be
+--   mapped over. There is no standard typeclass for types that are covariant
+--   in their second-to-last argument, so this function is provided for
+--   situations that require this.
 mapContent :: Functor f => (c1 -> c2) -> Encoding f c1 a -> Encoding f c2 a
 mapContent f (Encoding v) = Encoding
   $ Vector.map (\(OneEncoding h c) -> (OneEncoding (fmap f h) (f . c))) v

@@ -1,4 +1,6 @@
 import Test.DocTest
 
 main :: IO ()
-main = doctest ["src/Colonnade/Encoding.hs"]
+main = doctest
+  [ "src/Colonnade/Encoding.hs"
+  ]
