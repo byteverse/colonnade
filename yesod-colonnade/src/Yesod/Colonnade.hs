@@ -15,6 +15,7 @@ import Yesod.Core
 import Colonnade.Types
 import Data.Text (Text)
 import Control.Monad
+import Data.Monoid
 import Data.String (IsString(..))
 import qualified Colonnade.Encoding as Encoding
 import qualified Data.Text.Lazy as LText
@@ -27,6 +28,10 @@ data Cell site = Cell
 
 instance IsString (Cell site) where
   fromString = stringCell
+
+instance Monoid (Cell site) where
+  mempty = Cell [] mempty
+  mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (mappend c1 c2)
 
 cell :: WidgetT site IO () -> Cell site
 cell = Cell []
