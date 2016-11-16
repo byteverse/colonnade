@@ -9,6 +9,7 @@ module Yesod.Colonnade
   , stringCell
   , textCell
   , builderCell
+  , anchorCell
   ) where
 
 import Yesod.Core
@@ -18,6 +19,7 @@ import Control.Monad
 import Data.Monoid
 import Data.String (IsString(..))
 import qualified Colonnade.Encoding as Encoding
+import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
 
@@ -44,6 +46,11 @@ textCell = cell . toWidget . toHtml
 
 builderCell :: TBuilder.Builder -> Cell site
 builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
+
+anchorCell :: (a -> Route site) -> (a -> WidgetT site IO ()) -> a -> Cell site
+anchorCell getRoute getContent a = cell $ do
+  urlRender <- getUrlRender
+  aTag [(Text.pack "href",urlRender (getRoute a))] (getContent a)
 
 -- | This determines the attributes that are added
 --   to the individual @li@s by concatenating the header\'s
@@ -99,7 +106,7 @@ widgetFromCell ::
 widgetFromCell f (Cell attrs contents) =
   f attrs contents
 
-tr,tbody,thead,tableEl,td,th,ul,li ::
+tr,tbody,thead,tableEl,td,th,ul,li,aTag ::
   [(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ()
 tableEl str b = [whamlet|
   <table *{str}>^{b}
@@ -124,5 +131,8 @@ ul str b = [whamlet|
 |]
 li str b = [whamlet|
   <li *{str}>^{b}
+|]
+aTag str b = [whamlet|
+  <a *{str}>^{b}
 |]
 
