@@ -3,6 +3,8 @@
 
 module Yesod.Colonnade
   ( table
+  , tableHeadless
+  , definitionTable
   , listItems
   , Cell(..)
   , cell
@@ -54,22 +56,40 @@ anchorCell getRoute getContent a = cell $ do
 
 -- | This determines the attributes that are added
 --   to the individual @li@s by concatenating the header\'s
---   attributes with the data\'s attributes.
-listItems :: Foldable f
-  => (WidgetT site IO () -> WidgetT site IO ())
+--   attributes with the data\'s attributes. 
+listItems :: 
+     (WidgetT site IO () -> WidgetT site IO ())
      -- ^ Wrapper for items, often @ul@
   -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
      -- ^ Combines header with data
   -> Encoding Headed (Cell site) a
      -- ^ How to encode data as a row
-  -> f a
-     -- ^ Rows of data
+  -> a
+     -- ^ The value to display
   -> WidgetT site IO ()
-listItems ulWrap combine enc xs =
-  forM_ xs $ ulWrap . Encoding.runBothMonadic_ enc
+listItems ulWrap combine enc =
+  ulWrap . Encoding.runBothMonadic_ enc
     (\(Cell ha hc) (Cell ba bc) ->
       li (ha ++ ba) (combine hc bc)
     )
+
+-- | A two-column table with the header content displayed in the
+--   first column and the data displayed in the second column. Note
+--   that the generated HTML table does not have a @thead@.
+definitionTable ::
+     [(Text,Text)]
+     -- ^ Attributes of @table@ element.
+  -> Encoding Headed (Cell site) a
+     -- ^ How to encode data as a row
+  -> a
+     -- ^ The value to display
+  -> WidgetT site IO ()
+definitionTable attrs enc a = tableEl attrs $ tbody [] $ 
+  Encoding.runBothMonadic_ enc
+    (\theKey theValue -> tr [] $ do
+      widgetFromCell td theKey
+      widgetFromCell td theValue
+    ) a
 
 -- | If you are using the bootstrap css framework, then you may want
 --   to call this with the first argument as:
