@@ -31,7 +31,6 @@ library
     Colonnade.Types
     Colonnade.Encoding
     Colonnade.Decoding
-    Colonnade.Internal
   build-depends:
       base >= 4.7 && < 5
     , contravariant >= 1.2 && < 1.5

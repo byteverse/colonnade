@@ -38,7 +38,6 @@ import qualified Data.Bool
 import qualified Data.Maybe
 import qualified Data.List as List
 import qualified Data.Vector as Vector
-import qualified Colonnade.Internal as Internal
 
 -- $setup
 --
@@ -228,7 +227,7 @@ runRowMonadic :: (Monad m, Monoid b)
               -> a
               -> m b
 runRowMonadic (Colonnade v) g a =
-  flip Internal.foldlMapM v
+  flip foldlMapM v
   $ \e -> g (oneColonnadeEncode e a)
 
 runRowMonadic_ :: Monad m
@@ -264,7 +263,7 @@ runHeaderMonadicGeneral :: (Monad m, Monoid b, Foldable h)
   -> m b
 runHeaderMonadicGeneral (Colonnade v) g = id
   $ fmap (mconcat . Vector.toList)
-  $ Vector.mapM (Internal.foldlMapM g . oneColonnadeHead) v
+  $ Vector.mapM (foldlMapM g . oneColonnadeHead) v
 
 runHeaderMonadic :: (Monad m, Monoid b)
                  => Colonnade Headed content a
@@ -278,7 +277,7 @@ runHeaderMonadicGeneral_ :: (Monad m, Monoid b, Foldable h)
   -> (content -> m b)
   -> m ()
 runHeaderMonadicGeneral_ (Colonnade v) g =
-  Vector.mapM_ (Internal.foldlMapM g . oneColonnadeHead) v
+  Vector.mapM_ (foldlMapM g . oneColonnadeHead) v
 
 runHeaderMonadic_ ::
      (Monad m)
@@ -341,4 +340,8 @@ atDef def = Data.Maybe.fromMaybe def .^ atMay where
       where f 0 (z:_) = Right z
             f i (_:zs) = f (i-1) zs
             f i [] = Left $ "index too large, index=" ++ show o ++ ", length=" ++ show (o-i)
+
+foldlMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
+foldlMapM f = foldlM (\b a -> fmap (mappend b) (f a)) mempty
+
 
