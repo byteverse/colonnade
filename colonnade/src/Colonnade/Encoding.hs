@@ -57,14 +57,14 @@ import qualified Colonnade.Internal as Internal
 -- One potential columnar encoding of a @Person@ would be:
 --
 -- >>> :{
--- let encodingPerson :: Encoding Headed String Person
+-- let encodingPerson :: Colonnade Headed String Person
 --     encodingPerson = mconcat
 --       [ headed "Name" name
 --       , headed "Age" (show . age)
 --       ]
 -- :}
 --
--- The type signature on @basicPersonEncoding@ is not neccessary
+-- The type signature on @encodingPerson@ is not neccessary
 -- but is included for clarity. We can feed data into this encoding
 -- to build a table:
 --
@@ -82,7 +82,7 @@ import qualified Colonnade.Internal as Internal
 --
 -- >>> let showDollar = (('$':) . show) :: Int -> String
 -- >>> :{
--- let encodingHouse :: Encoding Headed String House
+-- let encodingHouse :: Colonnade Headed String House
 --     encodingHouse = mconcat
 --       [ headed "Color" (show . color)
 --       , headed "Price" (showDollar . price)
@@ -101,16 +101,16 @@ import qualified Colonnade.Internal as Internal
 
 
 -- | A single column with a header.
-headed :: c -> (a -> c) -> Encoding Headed c a
+headed :: c -> (a -> c) -> Colonnade Headed c a
 headed h = singleton (Headed h)
 
 -- | A single column without a header.
-headless :: (a -> c) -> Encoding Headless c a
+headless :: (a -> c) -> Colonnade Headless c a
 headless = singleton Headless
 
 -- | A single column with any kind of header. This is not typically needed.
-singleton :: f c -> (a -> c) -> Encoding f c a
-singleton h = Encoding . Vector.singleton . OneEncoding h
+singleton :: f c -> (a -> c) -> Colonnade f c a
+singleton h = Colonnade . Vector.singleton . OneColonnade h
 
 -- | Lift a column over a 'Maybe'. For example, if some people
 --   have houses and some do not, the data that pairs them together
@@ -129,7 +129,7 @@ singleton h = Encoding . Vector.singleton . OneEncoding h
 -- the help of 'fromMaybe':
 --
 -- >>> :{
--- >>> let encodingOwners :: Encoding Headed String (Person,Maybe House)
+-- >>> let encodingOwners :: Colonnade Headed String (Person,Maybe House)
 -- >>>     encodingOwners = mconcat
 -- >>>       [ contramap fst encodingPerson
 -- >>>       , contramap snd (fromMaybe "" encodingHouse)
@@ -144,9 +144,9 @@ singleton h = Encoding . Vector.singleton . OneEncoding h
 -- | Ruth   | 25  | Red   | $125000 |
 -- | Sonia  | 12  | Green | $145000 |
 -- +--------+-----+-------+---------+
-fromMaybe :: c -> Encoding f c a -> Encoding f c (Maybe a)
-fromMaybe c (Encoding v) = Encoding $ flip Vector.map v $
-  \(OneEncoding h encode) -> OneEncoding h (maybe c encode)
+fromMaybe :: c -> Colonnade f c a -> Colonnade f c (Maybe a)
+fromMaybe c (Colonnade v) = Colonnade $ flip Vector.map v $
+  \(OneColonnade h encode) -> OneColonnade h (maybe c encode)
 
 -- | Convert a collection of @b@ values into a columnar encoding of
 --   the same size. Suppose we decide to show a house\'s color
@@ -156,10 +156,10 @@ fromMaybe c (Encoding v) = Encoding $ flip Vector.map v $
 -- >>> let allColors = [Red,Green,Blue]
 -- >>> let encColor = columns (\c1 c2 -> if c1 == c2 then "✓" else "") (Headed . show) allColors
 -- >>> :t encColor
--- encColor :: Encoding Headed [Char] Color
+-- encColor :: Colonnade Headed [Char] Color
 -- >>> let encHouse = headed "Price" (showDollar . price) <> contramap color encColor
 -- >>> :t encHouse
--- encHouse :: Encoding Headed [Char] House
+-- encHouse :: Colonnade Headed [Char] House
 -- >>> putStr (ascii encHouse houses)
 -- +---------+-----+-------+------+
 -- | Price   | Red | Green | Blue |
@@ -172,10 +172,10 @@ columns :: Foldable g
   => (b -> a -> c) -- ^ Cell content function
   -> (b -> f c) -- ^ Header content function
   -> g b -- ^ Basis for column encodings
-  -> Encoding f c a
+  -> Colonnade f c a
 columns getCell getHeader = id
-  . Encoding
-  . Vector.map (\b -> OneEncoding (getHeader b) (getCell b))
+  . Colonnade
+  . Vector.map (\b -> OneColonnade (getHeader b) (getCell b))
   . Vector.fromList
   . toList
 
@@ -184,116 +184,116 @@ bool ::
   -> (a -> Bool) -- ^ Predicate
   -> (a -> c) -- ^ Contents when predicate is false
   -> (a -> c) -- ^ Contents when predicate is true
-  -> Encoding f c a
+  -> Colonnade f c a
 bool h p onTrue onFalse = singleton h (Data.Bool.bool <$> onFalse <*> onTrue <*> p)
 
 replaceWhen ::
      c
   -> (a -> Bool)
-  -> Encoding f c a
-  -> Encoding f c a
-replaceWhen newContent p (Encoding v) = Encoding
+  -> Colonnade f c a
+  -> Colonnade f c a
+replaceWhen newContent p (Colonnade v) = Colonnade
   ( Vector.map
-    (\(OneEncoding h encode) -> OneEncoding h $ \a ->
+    (\(OneColonnade h encode) -> OneColonnade h $ \a ->
       if p a then newContent else encode a
     ) v
   )
 
--- | 'Encoding' is covariant in its content type. Consequently, it can be
+-- | 'Colonnade' is covariant in its content type. Consequently, it can be
 --   mapped over. There is no standard typeclass for types that are covariant
 --   in their second-to-last argument, so this function is provided for
 --   situations that require this.
-mapContent :: Functor f => (c1 -> c2) -> Encoding f c1 a -> Encoding f c2 a
-mapContent f (Encoding v) = Encoding
-  $ Vector.map (\(OneEncoding h c) -> (OneEncoding (fmap f h) (f . c))) v
+mapContent :: Functor f => (c1 -> c2) -> Colonnade f c1 a -> Colonnade f c2 a
+mapContent f (Colonnade v) = Colonnade
+  $ Vector.map (\(OneColonnade h c) -> (OneColonnade (fmap f h) (f . c))) v
 
 -- | Consider providing a variant the produces a list
 -- instead. It may allow more things to get inlined
 -- in to a loop.
-runRow :: (c1 -> c2) -> Encoding f c1 a -> a -> Vector c2
-runRow g (Encoding v) a = flip Vector.map v $
-  \(OneEncoding _ encode) -> g (encode a)
+runRow :: (c1 -> c2) -> Colonnade f c1 a -> a -> Vector c2
+runRow g (Colonnade v) a = flip Vector.map v $
+  \(OneColonnade _ encode) -> g (encode a)
 
 runBothMonadic_ :: Monad m
-  => Encoding Headed content a
+  => Colonnade Headed content a
   -> (content -> content -> m b)
   -> a
   -> m ()
-runBothMonadic_ (Encoding v) g a =
-  forM_ v $ \(OneEncoding (Headed h) encode) -> g h (encode a)
+runBothMonadic_ (Colonnade v) g a =
+  forM_ v $ \(OneColonnade (Headed h) encode) -> g h (encode a)
 
 runRowMonadic :: (Monad m, Monoid b)
-              => Encoding f content a
+              => Colonnade f content a
               -> (content -> m b)
               -> a
               -> m b
-runRowMonadic (Encoding v) g a =
+runRowMonadic (Colonnade v) g a =
   flip Internal.foldlMapM v
-  $ \e -> g (oneEncodingEncode e a)
+  $ \e -> g (oneColonnadeEncode e a)
 
 runRowMonadic_ :: Monad m
-  => Encoding f content a
+  => Colonnade f content a
   -> (content -> m b)
   -> a
   -> m ()
-runRowMonadic_ (Encoding v) g a =
-  forM_ v $ \e -> g (oneEncodingEncode e a)
+runRowMonadic_ (Colonnade v) g a =
+  forM_ v $ \e -> g (oneColonnadeEncode e a)
 
 runRowMonadicWith :: (Monad m)
               => b
               -> (b -> b -> b)
-              -> Encoding f content a
+              -> Colonnade f content a
               -> (content -> m b)
               -> a
               -> m b
-runRowMonadicWith bempty bappend (Encoding v) g a =
+runRowMonadicWith bempty bappend (Colonnade v) g a =
   foldlM (\bl e -> do
-    br <- g (oneEncodingEncode e a)
+    br <- g (oneColonnadeEncode e a)
     return (bappend bl br)
   ) bempty v
 
-runHeader :: (c1 -> c2) -> Encoding Headed c1 a -> Vector c2
-runHeader g (Encoding v) =
-  Vector.map (g . getHeaded . oneEncodingHead) v
+runHeader :: (c1 -> c2) -> Colonnade Headed c1 a -> Vector c2
+runHeader g (Colonnade v) =
+  Vector.map (g . getHeaded . oneColonnadeHead) v
 
 -- | This function is a helper for abusing 'Foldable' to optionally
 --   render a header. Its future is uncertain.
 runHeaderMonadicGeneral :: (Monad m, Monoid b, Foldable h)
-  => Encoding h content a
+  => Colonnade h content a
   -> (content -> m b)
   -> m b
-runHeaderMonadicGeneral (Encoding v) g = id
+runHeaderMonadicGeneral (Colonnade v) g = id
   $ fmap (mconcat . Vector.toList)
-  $ Vector.mapM (Internal.foldlMapM g . oneEncodingHead) v
+  $ Vector.mapM (Internal.foldlMapM g . oneColonnadeHead) v
 
 runHeaderMonadic :: (Monad m, Monoid b)
-                 => Encoding Headed content a
+                 => Colonnade Headed content a
                  -> (content -> m b)
                  -> m b
-runHeaderMonadic (Encoding v) g =
-  fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneEncodingHead) v
+runHeaderMonadic (Colonnade v) g =
+  fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneColonnadeHead) v
 
 runHeaderMonadicGeneral_ :: (Monad m, Monoid b, Foldable h)
-  => Encoding h content a
+  => Colonnade h content a
   -> (content -> m b)
   -> m ()
-runHeaderMonadicGeneral_ (Encoding v) g =
-  Vector.mapM_ (Internal.foldlMapM g . oneEncodingHead) v
+runHeaderMonadicGeneral_ (Colonnade v) g =
+  Vector.mapM_ (Internal.foldlMapM g . oneColonnadeHead) v
 
 runHeaderMonadic_ ::
      (Monad m)
-  => Encoding Headed content a
+  => Colonnade Headed content a
   -> (content -> m b)
   -> m ()
-runHeaderMonadic_ (Encoding v) g = Vector.mapM_ (g . getHeaded . oneEncodingHead) v
+runHeaderMonadic_ (Colonnade v) g = Vector.mapM_ (g . getHeaded . oneColonnadeHead) v
 
 -- | Render a collection of rows as an ascii table. The table\'s columns are
--- specified by the given 'Encoding'. This implementation is inefficient and
+-- specified by the given 'Colonnade'. This implementation is inefficient and
 -- does not provide any wrapping behavior. It is provided so that users can
 -- try out @colonnade@ in ghci and so that @doctest@ can verify examples
 -- code in the haddocks.
 ascii :: Foldable f
-  => Encoding Headed String a -- ^ columnar encoding
+  => Colonnade Headed String a -- ^ columnar encoding
   -> f a -- ^ rows
   -> String
 ascii enc xs =

@@ -2,20 +2,22 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 module Yesod.Colonnade
-  ( table
-  , tableHeadless
-  , definitionTable
-  , listItems
-  , Cell(..)
+  ( -- * Build Encoding
+    Cell(..)
   , cell
   , stringCell
   , textCell
   , builderCell
   , anchorCell
+    -- * Apply Encoding
+  , table
+  , tableHeadless
+  , definitionTable
+  , listItems
   ) where
 
 import Yesod.Core
-import Colonnade.Types
+import Colonnade.Types (Colonnade,Headed,Headless)
 import Data.Text (Text)
 import Control.Monad
 import Data.Monoid
@@ -25,6 +27,8 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
 
+-- | The attributes that will be applied to a @<td>@ and
+--   the HTML content that will go inside it.
 data Cell site = Cell
   { cellAttrs :: ![(Text,Text)]
   , cellContents :: !(WidgetT site IO ())
@@ -37,19 +41,29 @@ instance Monoid (Cell site) where
   mempty = Cell [] mempty
   mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (mappend c1 c2)
 
+-- | Create a 'Cell' from a 'Widget'
 cell :: WidgetT site IO () -> Cell site
 cell = Cell []
 
+-- | Create a 'Cell' from a 'String'
 stringCell :: String -> Cell site
 stringCell = cell . fromString
 
+-- | Create a 'Cell' from a 'Text'
 textCell :: Text -> Cell site
 textCell = cell . toWidget . toHtml
 
+-- | Create a 'Cell' from a text builder
 builderCell :: TBuilder.Builder -> Cell site
 builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 
-anchorCell :: (a -> Route site) -> (a -> WidgetT site IO ()) -> a -> Cell site
+-- | Creata a 'Cell' whose content is hyperlinked by wrapping
+--   it in an @<a>@.
+anchorCell :: 
+     (a -> Route site) -- ^ Route that will go in @href@
+  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@
+  -> a -- ^ Value
+  -> Cell site
 anchorCell getRoute getContent a = cell $ do
   urlRender <- getUrlRender
   aTag [(Text.pack "href",urlRender (getRoute a))] (getContent a)
@@ -62,7 +76,7 @@ listItems ::
      -- ^ Wrapper for items, often @ul@
   -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
      -- ^ Combines header with data
-  -> Encoding Headed (Cell site) a
+  -> Colonnade Headed (Cell site) a
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
@@ -79,7 +93,7 @@ listItems ulWrap combine enc =
 definitionTable ::
      [(Text,Text)]
      -- ^ Attributes of @table@ element.
-  -> Encoding Headed (Cell site) a
+  -> Colonnade Headed (Cell site) a
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
@@ -97,7 +111,7 @@ definitionTable attrs enc a = tableEl attrs $ tbody [] $
 --   > table [("class","table table-striped")] ...
 table :: Foldable f
   => [(Text,Text)] -- ^ Attributes of @table@ element
-  -> Encoding Headed (Cell site) a -- ^ How to encode data as a row
+  -> Colonnade Headed (Cell site) a -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 table attrs enc xs = tableEl attrs $ do
@@ -106,13 +120,13 @@ table attrs enc xs = tableEl attrs $ do
 
 tableHeadless :: Foldable f
   => [(Text,Text)] -- ^ Attributes of @table@ element
-  -> Encoding Headless (Cell site) a -- ^ How to encode data as a row
+  -> Colonnade Headless (Cell site) a -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 tableHeadless attrs enc xs = tableEl attrs $ tableBody enc xs
 
 tableBody :: Foldable f
-  => Encoding h (Cell site) a -- ^ How to encode data as a row
+  => Colonnade h (Cell site) a -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 tableBody enc xs = tbody [] $ do

@@ -1,7 +1,20 @@
 name:                colonnade
-version:             0.4.7
+version:             0.5
 synopsis:            Generic types and functions for columnar encoding and decoding
-description:         Please see README.md
+description:
+  The `colonnade` package provides a way to to talk about
+  columnar encodings and decodings of data. This package provides
+  very general types and does not provide a way for the end-user
+  to actually apply the columnar encodings they build to data.
+  Most users will also want to one a companion packages
+  that provides (1) a content type and (2) functions for feeding
+  data into a columnar encoding:
+  .
+  * <https://hackage.haskell.org/package/reflex-dom-colonnade reflex-dom-colonnade> for reactive `reflex-dom` tables
+  .
+  * <https://hackage.haskell.org/package/yesod-colonnade yesod-colonnade> for `yesod` widgets
+  .
+  * <http://hackage.haskell.org/package/siphon siphon> for encoding and decoding CSVs
 homepage:            https://github.com/andrewthad/colonnade#readme
 license:             BSD3
 license-file:        LICENSE
@@ -17,16 +30,12 @@ library
   exposed-modules:
     Colonnade.Types
     Colonnade.Encoding
-    Colonnade.Encoding.Text
-    Colonnade.Encoding.ByteString.Char8
     Colonnade.Decoding
-    Colonnade.Decoding.Text
-    Colonnade.Decoding.ByteString.Char8
     Colonnade.Internal
   build-depends:
       base >= 4.7 && < 5
     , contravariant >= 1.2 && < 1.5
-    , vector >= 0.10 && < 0.12
+    , vector >= 0.10 && < 0.13
     , text >= 1.0 && < 1.3
     , bytestring >= 0.10 && < 0.11
   default-language:    Haskell2010
