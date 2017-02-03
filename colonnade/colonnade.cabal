@@ -28,9 +28,8 @@ cabal-version:       >=1.10
 library
   hs-source-dirs:      src
   exposed-modules:
-    Colonnade.Types
-    Colonnade.Encoding
-    Colonnade.Decoding
+    Colonnade
+    Colonnade.Internal
   build-depends:
       base >= 4.7 && < 5
     , contravariant >= 1.2 && < 1.5
