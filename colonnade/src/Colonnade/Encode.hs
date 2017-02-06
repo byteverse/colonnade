@@ -29,11 +29,13 @@ module Colonnade.Encode
   , rowMonadic
   , rowMonadic_
   , rowMonadicWith
+  , rowMonoidal
   , header
   , headerMonadic
   , headerMonadic_
   , headerMonadicGeneral
   , headerMonadicGeneral_
+  , headerMonoidalGeneral
   , bothMonadic_
   ) where
 
@@ -75,6 +77,15 @@ rowMonadic_ ::
   -> m ()
 rowMonadic_ (Colonnade v) g a =
   forM_ v $ \e -> g (oneColonnadeEncode e a)
+
+rowMonoidal ::
+     Monoid m
+  => Colonnade h c a
+  -> (c -> m)
+  -> a
+  -> m
+rowMonoidal (Colonnade v) g a =
+  foldMap (\e -> g (oneColonnadeEncode e a)) v
 
 rowMonadicWith :: 
   (Monad m)
@@ -119,6 +130,15 @@ headerMonadicGeneral_ ::
   -> m ()
 headerMonadicGeneral_ (Colonnade v) g =
   Vector.mapM_ (mapM_ g . oneColonnadeHead) v
+
+headerMonoidalGeneral ::
+     (Monoid m, Foldable h)
+  => Colonnade h c a
+  -> (c -> m)
+  -> m
+headerMonoidalGeneral (Colonnade v) g =
+  foldMap (foldMap g . oneColonnadeHead) v
+  
 
 headerMonadic_ ::
      (Monad m)
