@@ -1,5 +1,5 @@
 name:                colonnade
-version:             0.5
+version:             1.0.0
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:
   The `colonnade` package provides a way to to talk about
@@ -29,6 +29,7 @@ library
   hs-source-dirs:      src
   exposed-modules:
     Colonnade
+    Colonnade.Encode
     Colonnade.Internal
   build-depends:
       base >= 4.7 && < 5

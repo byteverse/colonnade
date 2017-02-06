@@ -46,15 +46,15 @@ instance Contravariant Headless where
   contramap _ Headless = Headless
 
 -- | Encodes a header and a cell.
-data OneColonnade f content a = OneColonnade
-  { oneColonnadeHead   :: !(f content)
+data OneColonnade h content a = OneColonnade
+  { oneColonnadeHead   :: !(h content)
   , oneColonnadeEncode :: !(a -> content)
   }
 
-instance Contravariant (OneColonnade f content) where
+instance Contravariant (OneColonnade h content) where
   contramap f (OneColonnade h e) = OneColonnade h (e . f)
 
--- | An columnar encoding of @a@. The type variable @f@ determines what
+-- | An columnar encoding of @a@. The type variable @h@ determines what
 --   is present in each column in the header row. It is typically instantiated
 --   to 'Headed' and occasionally to 'Headless'. There is nothing that
 --   restricts it to these two types, although they satisfy the majority
@@ -62,7 +62,17 @@ instance Contravariant (OneColonnade f content) where
 --   be @Text@, @String@, or @ByteString@. In the companion libraries
 --   @reflex-dom-colonnade@ and @yesod-colonnade@, additional types
 --   that represent HTML with element attributes are provided that serve
---   as the content type.
+--   as the content type. Presented more visually:
+--
+-- >             +---- Content (Text, ByteString, Html, etc.)
+-- >             |
+-- >             v
+-- > Colonnade h c a
+-- >           ^   ^
+-- >           |   |
+-- >           |   +-- Value consumed to build a row
+-- >           |
+-- >           +------ Headedness (Headed or Headless)
 --
 --   Internally, a 'Colonnade' is represented as a 'Vector' of individual
 --   column encodings. It is possible to use any collection type with
@@ -71,20 +81,18 @@ instance Contravariant (OneColonnade f content) where
 --   once and then folding over it many times. It is recommended that
 --   'Colonnade's are defined at the top-level so that GHC avoids reconstructing
 --   them every time they are used.
-newtype Colonnade f c a = Colonnade
-  { getColonnade :: Vector (OneColonnade f c a)
+newtype Colonnade h c a = Colonnade
+  { getColonnade :: Vector (OneColonnade h c a)
   } deriving (Monoid)
 
-instance Contravariant (Colonnade f content) where
+instance Contravariant (Colonnade h content) where
   contramap f (Colonnade v) = Colonnade
     (Vector.map (contramap f) v)
 
-instance Divisible (Colonnade f content) where
+instance Divisible (Colonnade h content) where
   conquer = Colonnade Vector.empty
   divide f (Colonnade a) (Colonnade b) =
     Colonnade $ (Vector.++)
       (Vector.map (contramap (fst . f)) a)
       (Vector.map (contramap (snd . f)) b)
-      -- (Vector.map (\(OneEncoding h c) -> (h,c . fst . f)) a)
-      -- (Vector.map (\(OneEncoding h c) -> (h,c . snd . f)) b)
 

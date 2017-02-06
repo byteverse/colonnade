@@ -15,7 +15,7 @@
 # resolver:
 #  name: custom-snapshot
 #  location: "./custom-snapshot.yaml"
-resolver: lts-6.5
+resolver: lts-7.18
 
 # User packages to be built.
 # Various formats can be used as shown in the example below.
@@ -39,6 +39,7 @@ packages:
 - 'colonnade'
 - 'yesod-colonnade'
 - 'reflex-dom-colonnade'
+- 'blaze-colonnade'
 - 'siphon'
 - 'geolite-csv'
 # Dependency packages to be pulled from upstream that are not in the resolver
@@ -47,12 +48,9 @@ extra-deps:
 - 'reflex-dom-0.3'
 - 'ref-tf-0.4'
 - 'reflex-0.4.0'
-- 'aeson-0.9.0.1'
 - 'haskell-src-exts-1.16.0.1'
 - 'syb-0.5.1'
 - 'ip-0.8.4'
-- 'lmdb-0.2.5'
-
 
 # Override default flag values for local packages and extra-deps
 flags: {}

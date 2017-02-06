@@ -2,14 +2,14 @@
 {-# LANGUAGE QuasiQuotes #-}
 
 module Yesod.Colonnade
-  ( -- * Build Encoding
+  ( -- * Build
     Cell(..)
   , cell
   , stringCell
   , textCell
   , builderCell
   , anchorCell
-    -- * Apply Encoding
+    -- * Apply
   , table
   , tableHeadless
   , definitionTable
@@ -17,12 +17,12 @@ module Yesod.Colonnade
   ) where
 
 import Yesod.Core
-import Colonnade.Types (Colonnade,Headed,Headless)
+import Colonnade (Colonnade,Headed,Headless)
 import Data.Text (Text)
 import Control.Monad
 import Data.Monoid
 import Data.String (IsString(..))
-import qualified Colonnade.Encoding as Encoding
+import qualified Colonnade.Encode as Encode
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
@@ -60,8 +60,8 @@ builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 -- | Creata a 'Cell' whose content is hyperlinked by wrapping
 --   it in an @<a>@.
 anchorCell :: 
-     (a -> Route site) -- ^ Route that will go in @href@
-  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@
+     (a -> Route site) -- ^ Route that will go in @href@ attribute
+   -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
   -> a -- ^ Value
   -> Cell site
 anchorCell getRoute getContent a = cell $ do
@@ -82,7 +82,7 @@ listItems ::
      -- ^ The value to display
   -> WidgetT site IO ()
 listItems ulWrap combine enc =
-  ulWrap . Encoding.runBothMonadic_ enc
+  ulWrap . Encode.bothMonadic_ enc
     (\(Cell ha hc) (Cell ba bc) ->
       li (ha ++ ba) (combine hc bc)
     )
@@ -99,7 +99,7 @@ definitionTable ::
      -- ^ The value to display
   -> WidgetT site IO ()
 definitionTable attrs enc a = tableEl attrs $ tbody [] $ 
-  Encoding.runBothMonadic_ enc
+  Encode.bothMonadic_ enc
     (\theKey theValue -> tr [] $ do
       widgetFromCell td theKey
       widgetFromCell td theValue
@@ -115,7 +115,7 @@ table :: Foldable f
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 table attrs enc xs = tableEl attrs $ do
-  thead [] $ Encoding.runHeaderMonadic enc (widgetFromCell th)
+  thead [] $ Encode.headerMonadic enc (widgetFromCell th)
   tableBody enc xs
 
 tableHeadless :: Foldable f
@@ -131,7 +131,7 @@ tableBody :: Foldable f
   -> WidgetT site IO ()
 tableBody enc xs = tbody [] $ do
   forM_ xs $ \x -> do
-    tr [] $ Encoding.runRowMonadic enc (widgetFromCell td) x
+    tr [] $ Encode.rowMonadic enc (widgetFromCell td) x
 
 widgetFromCell ::
   ([(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ())

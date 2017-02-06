@@ -17,23 +17,12 @@ module Colonnade
   , bool
   , replaceWhen
   , mapContent
-    -- * Render
-    -- $render
-  , runRow
-  , runRowMonadic
-  , runRowMonadic_
-  , runRowMonadicWith
-  , runHeader
-  , runHeaderMonadic
-  , runHeaderMonadic_
-  , runHeaderMonadicGeneral
-  , runHeaderMonadicGeneral_
-  , runBothMonadic_
     -- * Ascii Table
   , ascii
   ) where
 
 import Colonnade.Internal
+import qualified Colonnade.Encode as Encode
 import Data.Vector (Vector)
 import Data.Foldable
 import Data.Monoid (Endo(..))
@@ -211,94 +200,6 @@ mapContent :: Functor f => (c1 -> c2) -> Colonnade f c1 a -> Colonnade f c2 a
 mapContent f (Colonnade v) = Colonnade
   $ Vector.map (\(OneColonnade h c) -> (OneColonnade (fmap f h) (f . c))) v
 
--- $render
---
--- The rendering functions, which by convention begin with
--- the word @run@, are provided as a convenience for for
--- apply a columnar encoding.
-
-
-
--- | Consider providing a variant the produces a list
--- instead. It may allow more things to get inlined
--- in to a loop.
-runRow :: (c1 -> c2) -> Colonnade f c1 a -> a -> Vector c2
-runRow g (Colonnade v) a = flip Vector.map v $
-  \(OneColonnade _ encode) -> g (encode a)
-
-runBothMonadic_ :: Monad m
-  => Colonnade Headed content a
-  -> (content -> content -> m b)
-  -> a
-  -> m ()
-runBothMonadic_ (Colonnade v) g a =
-  forM_ v $ \(OneColonnade (Headed h) encode) -> g h (encode a)
-
-runRowMonadic :: (Monad m, Monoid b)
-              => Colonnade f content a
-              -> (content -> m b)
-              -> a
-              -> m b
-runRowMonadic (Colonnade v) g a =
-  flip foldlMapM v
-  $ \e -> g (oneColonnadeEncode e a)
-
-runRowMonadic_ :: Monad m
-  => Colonnade f content a
-  -> (content -> m b)
-  -> a
-  -> m ()
-runRowMonadic_ (Colonnade v) g a =
-  forM_ v $ \e -> g (oneColonnadeEncode e a)
-
-runRowMonadicWith :: (Monad m)
-              => b
-              -> (b -> b -> b)
-              -> Colonnade f content a
-              -> (content -> m b)
-              -> a
-              -> m b
-runRowMonadicWith bempty bappend (Colonnade v) g a =
-  foldlM (\bl e -> do
-    br <- g (oneColonnadeEncode e a)
-    return (bappend bl br)
-  ) bempty v
-
-runHeader :: (c1 -> c2) -> Colonnade Headed c1 a -> Vector c2
-runHeader g (Colonnade v) =
-  Vector.map (g . getHeaded . oneColonnadeHead) v
-
--- | This function is a helper for abusing 'Foldable' to optionally
---   render a header. Its future is uncertain.
-runHeaderMonadicGeneral :: (Monad m, Monoid b, Foldable h)
-  => Colonnade h content a
-  -> (content -> m b)
-  -> m b
-runHeaderMonadicGeneral (Colonnade v) g = id
-  $ fmap (mconcat . Vector.toList)
-  $ Vector.mapM (foldlMapM g . oneColonnadeHead) v
-
-runHeaderMonadic :: (Monad m, Monoid b)
-                 => Colonnade Headed content a
-                 -> (content -> m b)
-                 -> m b
-runHeaderMonadic (Colonnade v) g =
-  fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneColonnadeHead) v
-
-runHeaderMonadicGeneral_ :: (Monad m, Monoid b, Foldable h)
-  => Colonnade h content a
-  -> (content -> m b)
-  -> m ()
-runHeaderMonadicGeneral_ (Colonnade v) g =
-  Vector.mapM_ (foldlMapM g . oneColonnadeHead) v
-
-runHeaderMonadic_ ::
-     (Monad m)
-  => Colonnade Headed content a
-  -> (content -> m b)
-  -> m ()
-runHeaderMonadic_ (Colonnade v) g = Vector.mapM_ (g . getHeaded . oneColonnadeHead) v
-
 -- | Render a collection of rows as an ascii table. The table\'s columns are
 -- specified by the given 'Colonnade'. This implementation is inefficient and
 -- does not provide any wrapping behavior. It is provided so that users can
@@ -310,9 +211,9 @@ ascii :: Foldable f
   -> String
 ascii enc xs =
   let theHeader :: [(Int,String)]
-      theHeader = (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ")) (toList (runHeader id enc))
+      theHeader = (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ")) (toList (Encode.header id enc))
       theBody :: [[(Int,String)]]
-      theBody = map (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ") . toList . runRow id enc) (toList xs)
+      theBody = map (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ") . toList . Encode.row id enc) (toList xs)
       sizes :: [Int]
       sizes = ($ replicate (length theHeader) 1) $ appEndo $ mconcat
         [ foldMap (\(i,str) -> Endo (replaceAt i (length str))) theHeader
@@ -354,8 +255,23 @@ atDef def = Data.Maybe.fromMaybe def .^ atMay where
             f i (_:zs) = f (i-1) zs
             f i [] = Left $ "index too large, index=" ++ show o ++ ", length=" ++ show (o-i)
 
-foldlMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
-foldlMapM f = foldlM (\b a -> fmap (mappend b) (f a)) mempty
+-- data Company = Company String String Int
+-- 
+-- data Company = Company
+--   { companyName :: String
+--   , companyCountry :: String
+--   , companyValue :: Int
+--   } deriving (Show)
+-- 
+-- myCompanies :: [Company]
+-- myCompanies =
+--   [ Company "eCommHub" "United States" 50
+--   , Company "Layer 3 Communications" "United States" 10000000
+--   , Company "Microsoft" "England" 500000000
+--   ]
+
+
+
 
 
 
