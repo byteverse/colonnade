@@ -16,6 +16,7 @@ module Colonnade
   , columns
   , bool
   , replaceWhen
+  , modifyWhen
   , mapContent
     -- * Ascii Table
   , ascii
@@ -180,10 +181,28 @@ bool ::
   -> Colonnade f c a
 bool h p onTrue onFalse = singleton h (Data.Bool.bool <$> onFalse <*> onTrue <*> p)
 
-replaceWhen ::
-     c
-  -> (a -> Bool)
+-- | Modify the contents of cells in rows whose values satisfy the
+--   given predicate. Header content is unaffected. With an HTML backend, 
+--   this can be used to strikethrough the contents of cells with data that is
+--   considered invalid.
+modifyWhen ::
+     (c -> c) -- ^ Content change
+  -> (a -> Bool) -- ^ Row predicate
+  -> Colonnade f c a -- ^ Original 'Colonnade'
   -> Colonnade f c a
+modifyWhen changeContent p (Colonnade v) = Colonnade
+  ( Vector.map
+    (\(OneColonnade h encode) -> OneColonnade h $ \a ->
+      if p a then changeContent (encode a) else encode a
+    ) v
+  )
+
+-- | Replace the contents of cells in rows whose values satisfy the
+--   given predicate. Header content is unaffected.
+replaceWhen ::
+     c -- ^ New content
+  -> (a -> Bool) -- ^ Row predicate
+  -> Colonnade f c a -- ^ Original 'Colonnade'
   -> Colonnade f c a
 replaceWhen newContent p (Colonnade v) = Colonnade
   ( Vector.map
