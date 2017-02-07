@@ -42,7 +42,7 @@ import qualified Data.Vector as Vector
 -- >>> import Data.Monoid (mconcat,(<>))
 -- >>> import Data.Functor.Contravariant (contramap)
 --
--- Assume that the data we wish to encode is:
+-- The data types we wish to encode are:
 --
 -- >>> data Color = Red | Green | Blue deriving (Show,Eq)
 -- >>> data Person = Person { name :: String, age :: Int }
@@ -51,19 +51,19 @@ import qualified Data.Vector as Vector
 -- One potential columnar encoding of a @Person@ would be:
 --
 -- >>> :{
--- let encodingPerson :: Colonnade Headed String Person
---     encodingPerson = mconcat
+-- let colPerson :: Colonnade Headed String Person
+--     colPerson = mconcat
 --       [ headed "Name" name
 --       , headed "Age" (show . age)
 --       ]
 -- :}
 --
--- The type signature on @encodingPerson@ is not neccessary
+-- The type signature on @colPerson@ is not neccessary
 -- but is included for clarity. We can feed data into this encoding
 -- to build a table:
 --
 -- >>> let people = [Person "David" 63, Person "Ava" 34, Person "Sonia" 12]
--- >>> putStr (ascii encodingPerson people)
+-- >>> putStr (ascii colPerson people)
 -- +-------+-----+
 -- | Name  | Age |
 -- +-------+-----+
@@ -123,14 +123,14 @@ singleton h = Colonnade . Vector.singleton . OneColonnade h
 -- the help of 'fromMaybe':
 --
 -- >>> :{
--- let encodingOwners :: Colonnade Headed String (Person,Maybe House)
---     encodingOwners = mconcat
---       [ contramap fst encodingPerson
+-- let colOwners :: Colonnade Headed String (Person,Maybe House)
+--     colOwners = mconcat
+--       [ contramap fst colPerson
 --       , contramap snd (fromMaybe "" encodingHouse)
 --       ]
 -- :}
 --
--- >>> putStr (ascii encodingOwners owners)
+-- >>> putStr (ascii colOwners owners)
 -- +--------+-----+-------+---------+
 -- | Name   | Age | Color | Price   |
 -- +--------+-----+-------+---------+

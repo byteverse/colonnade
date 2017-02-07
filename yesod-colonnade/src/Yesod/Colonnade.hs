@@ -1,6 +1,10 @@
-{-# LANGUAGE TemplateHaskell #-}
-{-# LANGUAGE QuasiQuotes #-}
-
+-- | Build HTML tables using @yesod@ and @colonnade@. To learn
+--   how to use this module, first read the documentation for @colonnade@,
+--   and then read the documentation for @blaze-colonnade@. This library
+--   and @blaze-colonnade@ are entirely distinct; neither depends on the
+--   other. However, the interfaces they expose are very similar, and
+--   the explanations provided counterpart are sufficient to understand
+--   this library.
 module Yesod.Colonnade
   ( -- * Build
     Cell(..)
@@ -10,18 +14,25 @@ module Yesod.Colonnade
   , builderCell
   , anchorCell
     -- * Apply
-  , table
-  , tableHeadless
-  , definitionTable
-  , listItems
+  , encodeHeadedWidgetTable
+  , encodeHeadlessWidgetTable
+  , encodeHeadedCellTable
+  , encodeHeadlessCellTable
+  , encodeDefinitionTable
+  , encodeListItems
   ) where
 
 import Yesod.Core
+import Yesod.Core.Types (Body(..),GWData(..),WidgetT(..))
 import Colonnade (Colonnade,Headed,Headless)
 import Data.Text (Text)
 import Control.Monad
 import Data.Monoid
 import Data.String (IsString(..))
+import Text.Blaze (Attribute,toValue)
+import Data.Foldable
+import qualified Text.Blaze.Html5.Attributes as HA
+import qualified Text.Blaze.Html5 as H
 import qualified Colonnade.Encode as Encode
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
@@ -30,7 +41,7 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- | The attributes that will be applied to a @<td>@ and
 --   the HTML content that will go inside it.
 data Cell site = Cell
-  { cellAttrs :: ![(Text,Text)]
+  { cellAttrs :: !Attribute
   , cellContents :: !(WidgetT site IO ())
   }
 
@@ -38,12 +49,12 @@ instance IsString (Cell site) where
   fromString = stringCell
 
 instance Monoid (Cell site) where
-  mempty = Cell [] mempty
+  mempty = Cell mempty mempty
   mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (mappend c1 c2)
 
 -- | Create a 'Cell' from a 'Widget'
 cell :: WidgetT site IO () -> Cell site
-cell = Cell []
+cell = Cell mempty
 
 -- | Create a 'Cell' from a 'String'
 stringCell :: String -> Cell site
@@ -58,20 +69,20 @@ builderCell :: TBuilder.Builder -> Cell site
 builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 
 -- | Creata a 'Cell' whose content is hyperlinked by wrapping
---   it in an @<a>@.
+--   it in an @\<a\>@.
 anchorCell :: 
      (a -> Route site) -- ^ Route that will go in @href@ attribute
-   -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
+  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
   -> a -- ^ Value
   -> Cell site
 anchorCell getRoute getContent a = cell $ do
   urlRender <- getUrlRender
-  aTag [(Text.pack "href",urlRender (getRoute a))] (getContent a)
+  a_ (HA.href (toValue (urlRender (getRoute a)))) (getContent a)
 
 -- | This determines the attributes that are added
 --   to the individual @li@s by concatenating the header\'s
 --   attributes with the data\'s attributes. 
-listItems :: 
+encodeListItems :: 
      (WidgetT site IO () -> WidgetT site IO ())
      -- ^ Wrapper for items, often @ul@
   -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
@@ -81,92 +92,116 @@ listItems ::
   -> a
      -- ^ The value to display
   -> WidgetT site IO ()
-listItems ulWrap combine enc =
+encodeListItems ulWrap combine enc =
   ulWrap . Encode.bothMonadic_ enc
     (\(Cell ha hc) (Cell ba bc) ->
-      li (ha ++ ba) (combine hc bc)
+      li_ (ha <> ba) (combine hc bc)
     )
 
 -- | A two-column table with the header content displayed in the
 --   first column and the data displayed in the second column. Note
 --   that the generated HTML table does not have a @thead@.
-definitionTable ::
-     [(Text,Text)]
+encodeDefinitionTable ::
+     Attribute
      -- ^ Attributes of @table@ element.
   -> Colonnade Headed (Cell site) a
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
   -> WidgetT site IO ()
-definitionTable attrs enc a = tableEl attrs $ tbody [] $ 
+encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $ 
   Encode.bothMonadic_ enc
-    (\theKey theValue -> tr [] $ do
-      widgetFromCell td theKey
-      widgetFromCell td theValue
+    (\theKey theValue -> tr_ mempty $ do
+      widgetFromCell td_ theKey
+      widgetFromCell td_ theValue
     ) a
 
 -- | If you are using the bootstrap css framework, then you may want
 --   to call this with the first argument as:
 --
---   > table [("class","table table-striped")] ...
-table :: Foldable f
-  => [(Text,Text)] -- ^ Attributes of @table@ element
+--   > encodeHeadedCellTable (HA.class_ "table table-striped") ...
+encodeHeadedCellTable :: Foldable f
+  => Attribute -- ^ Attributes of @table@ element
   -> Colonnade Headed (Cell site) a -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
-table attrs enc xs = tableEl attrs $ do
-  thead [] $ Encode.headerMonadic enc (widgetFromCell th)
-  tableBody enc xs
+encodeHeadedCellTable = encodeTable
+  (Just mempty) mempty (const mempty) widgetFromCell 
 
-tableHeadless :: Foldable f
-  => [(Text,Text)] -- ^ Attributes of @table@ element
-  -> Colonnade Headless (Cell site) a -- ^ How to encode data as a row
+encodeHeadlessCellTable :: Foldable f
+  => Attribute -- ^ Attributes of @table@ element
+  -> Colonnade Headless (Cell site) a -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
-tableHeadless attrs enc xs = tableEl attrs $ tableBody enc xs
+encodeHeadlessCellTable = encodeTable
+  Nothing mempty (const mempty) widgetFromCell 
 
-tableBody :: Foldable f
-  => Colonnade h (Cell site) a -- ^ How to encode data as a row
+encodeHeadedWidgetTable :: Foldable f
+  => Attribute -- ^ Attributes of @table@ element
+  -> Colonnade Headed (WidgetT site IO ()) a -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
-tableBody enc xs = tbody [] $ do
-  forM_ xs $ \x -> do
-    tr [] $ Encode.rowMonadic enc (widgetFromCell td) x
+encodeHeadedWidgetTable = encodeTable
+  (Just mempty) mempty (const mempty) ($ mempty)
+
+encodeHeadlessWidgetTable :: Foldable f
+  => Attribute -- ^ Attributes of @\<table\>@ element
+  -> Colonnade Headless (WidgetT site IO ()) a -- ^ How to encode data as columns
+  -> f a -- ^ Rows of data
+  -> WidgetT site IO ()
+encodeHeadlessWidgetTable = encodeTable
+  Nothing mempty (const mempty) ($ mempty) 
+
+-- | Encode a table. This handles a very general case and
+--   is seldom needed by users. One of the arguments provided is
+--   used to add attributes to the generated @\<tr\>@ elements.
+encodeTable ::
+     (Foldable f, Foldable h)
+  => Maybe Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
+  -> Attribute -- ^ Attributes of @\<tbody\>@ element
+  -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
+  -> ((Attribute -> WidgetT site IO () -> WidgetT site IO ()) -> c -> WidgetT site IO ()) -- ^ Wrap content and convert to 'Html'
+  -> Attribute -- ^ Attributes of @\<table\>@ element
+  -> Colonnade h c a -- ^ How to encode data as a row
+  -> f a -- ^ Collection of data
+  -> WidgetT site IO ()
+encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
+  table_ tableAttrs $ do
+    for_ mtheadAttrs $ \theadAttrs -> do
+      thead_ theadAttrs $ do
+        Encode.headerMonadicGeneral_ colonnade (wrapContent th_)
+    tbody_ tbodyAttrs $ do
+      forM_ xs $ \x -> do
+        tr_ (trAttrs x) (Encode.rowMonadic_ colonnade (wrapContent td_) x)
 
 widgetFromCell ::
-  ([(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ())
+  (Attribute -> WidgetT site IO () -> WidgetT site IO ())
   -> Cell site
   -> WidgetT site IO ()
 widgetFromCell f (Cell attrs contents) =
   f attrs contents
 
-tr,tbody,thead,tableEl,td,th,ul,li,aTag ::
-  [(Text,Text)] -> WidgetT site IO () -> WidgetT site IO ()
-tableEl str b = [whamlet|
-  <table *{str}>^{b}
-|]
-thead str b = [whamlet|
-  <thead *{str}>^{b}
-|]
-tbody str b = [whamlet|
-  <tbody *{str}>^{b}
-|]
-tr str b = [whamlet|
-  <tr *{str}>^{b}
-|]
-th str b = [whamlet|
-  <th *{str}>^{b}
-|]
-td str b = [whamlet|
-  <td *{str}>^{b}
-|]
-ul str b = [whamlet|
-  <ul *{str}>^{b}
-|]
-li str b = [whamlet|
-  <li *{str}>^{b}
-|]
-aTag str b = [whamlet|
-  <a *{str}>^{b}
-|]
+tr_,tbody_,thead_,table_,td_,th_,ul_,li_,a_ ::
+  Attribute -> WidgetT site IO () -> WidgetT site IO ()
+
+table_ = liftParent H.table
+thead_ = liftParent H.thead
+tbody_ = liftParent H.tbody
+tr_ = liftParent H.tr
+td_ = liftParent H.td
+th_ = liftParent H.th
+ul_ = liftParent H.ul
+li_ = liftParent H.li
+a_ = liftParent H.a
+
+liftParent :: (Html -> Html) -> Attribute -> WidgetT site IO a -> WidgetT site IO a
+liftParent el attrs (WidgetT f) = WidgetT $ \hdata -> do
+  (a,gwd) <- f hdata
+  let Body bodyFunc = gwdBody gwd
+      newBodyFunc render =
+        el H.! attrs $ (bodyFunc render)
+  return (a,gwd { gwdBody = Body newBodyFunc })
+
+
+
 

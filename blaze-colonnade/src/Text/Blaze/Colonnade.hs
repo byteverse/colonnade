@@ -296,6 +296,9 @@ lazyTextCell = textCell . LText.toStrict
 builderCell :: TBuilder.Builder -> Cell
 builderCell = lazyTextCell . TBuilder.toLazyText
 
+-- | Encode a table. This handles a very general case and
+--   is seldom needed by users. One of the arguments provided is
+--   used to add attributes to the generated @\<tr\>@ elements.
 encodeTable ::
      (Foldable f, Foldable h)
   => Maybe Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
@@ -315,6 +318,8 @@ encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
       forM_ xs $ \x -> do
         H.tr ! trAttrs x $ Encode.rowMonoidal colonnade (wrapContent H.td) x
 
+-- | Encode a table with a header. Table cells may have attributes
+--   applied to them.
 encodeHeadedCellTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -324,6 +329,8 @@ encodeHeadedCellTable ::
 encodeHeadedCellTable = encodeTable
   (Just mempty) mempty (const mempty) htmlFromCell 
 
+-- | Encode a table without a header. Table cells may have attributes
+--   applied to them.
 encodeHeadlessCellTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -333,6 +340,8 @@ encodeHeadlessCellTable ::
 encodeHeadlessCellTable = encodeTable
   Nothing mempty (const mempty) htmlFromCell 
 
+-- | Encode a table with a header. Table cells cannot have attributes
+--   applied to them.
 encodeHeadedHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -342,6 +351,8 @@ encodeHeadedHtmlTable ::
 encodeHeadedHtmlTable = encodeTable
   (Just mempty) mempty (const mempty) ($) 
 
+-- | Encode a table without a header. Table cells cannot have attributes
+--   applied to them.
 encodeHeadlessHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
