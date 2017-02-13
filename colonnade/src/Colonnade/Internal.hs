@@ -16,6 +16,7 @@ import Data.Functor.Contravariant (Contravariant(..))
 import Data.Functor.Contravariant.Divisible (Divisible(..))
 import Control.Exception (Exception)
 import Data.Typeable (Typeable)
+import Data.Profunctor (Profunctor(..))
 import qualified Data.Vector as Vector
 
 -- | As the first argument to the 'Colonnade' type 
@@ -46,13 +47,14 @@ instance Contravariant Headless where
   contramap _ Headless = Headless
 
 -- | Encodes a header and a cell.
-data OneColonnade h content a = OneColonnade
-  { oneColonnadeHead   :: !(h content)
-  , oneColonnadeEncode :: !(a -> content)
-  }
+data OneColonnade h a c = OneColonnade
+  { oneColonnadeHead   :: !(h c)
+  , oneColonnadeEncode :: !(a -> c)
+  } deriving (Functor)
 
-instance Contravariant (OneColonnade h content) where
-  contramap f (OneColonnade h e) = OneColonnade h (e . f)
+instance Functor h => Profunctor (OneColonnade h) where
+  rmap = fmap
+  lmap f (OneColonnade h e) = OneColonnade h (e . f)
 
 -- | An columnar encoding of @a@. The type variable @h@ determines what
 --   is present in each column in the header row. It is typically instantiated
@@ -81,18 +83,12 @@ instance Contravariant (OneColonnade h content) where
 --   once and then folding over it many times. It is recommended that
 --   'Colonnade's are defined at the top-level so that GHC avoids reconstructing
 --   them every time they are used.
-newtype Colonnade h c a = Colonnade
-  { getColonnade :: Vector (OneColonnade h c a)
-  } deriving (Monoid)
+newtype Colonnade h a c = Colonnade
+  { getColonnade :: Vector (OneColonnade h a c)
+  } deriving (Monoid,Functor)
 
-instance Contravariant (Colonnade h content) where
-  contramap f (Colonnade v) = Colonnade
-    (Vector.map (contramap f) v)
-
-instance Divisible (Colonnade h content) where
-  conquer = Colonnade Vector.empty
-  divide f (Colonnade a) (Colonnade b) =
-    Colonnade $ (Vector.++)
-      (Vector.map (contramap (fst . f)) a)
-      (Vector.map (contramap (snd . f)) b)
+instance Functor h => Profunctor (Colonnade h) where
+  rmap = fmap
+  lmap f (Colonnade v) = Colonnade
+    (Vector.map (lmap f) v)
 
