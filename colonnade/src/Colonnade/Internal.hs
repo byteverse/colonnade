@@ -174,7 +174,7 @@ getCorniceCap :: Cornice (Cap p) a c -> Vector (OneCornice Cornice p a c)
 getCorniceCap (CorniceCap c) = c
 
 data AnnotatedCornice (p :: Pillar) a c where
-  AnnotatedCorniceBase :: !(Colonnade (Sized Headed) a c) -> AnnotatedCornice Base a c
+  AnnotatedCorniceBase :: !(Maybe Int) -> !(Colonnade (Sized Headed) a c) -> AnnotatedCornice Base a c
   AnnotatedCorniceCap :: 
        !(Maybe Int)
     -> {-# UNPACK #-} !(Vector (OneCornice AnnotatedCornice p a c))

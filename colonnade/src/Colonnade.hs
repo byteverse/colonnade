@@ -1,4 +1,4 @@
-
+{-# LANGUAGE DataKinds #-}
 
 -- | Build backend-agnostic columnar encodings that can be 
 --   used to visualize tabular data.
@@ -6,25 +6,26 @@ module Colonnade
   ( -- * Example
     -- $setup
     -- * Types
-    -- ** Colonnade
     Colonnade
   , Headed
   , Headless
-    -- ** Cornice
-  , Cornice
-  , Pillar(..)
-  , Fascia(..)
     -- * Create
   , headed
   , headless
   , singleton
     -- * Transform
+  , mapHeaderContent
   , fromMaybe
   , columns
   , bool
   , replaceWhen
   , modifyWhen
     -- * Cornice
+    -- ** Types
+  , Cornice
+  , Pillar(..)
+  , Fascia(..)
+    -- ** Create
   , cap
   , recap
     -- * Ascii Table
@@ -84,15 +85,15 @@ import qualified Data.Vector as Vector
 --
 -- >>> let showDollar = (('$':) . show) :: Int -> String
 -- >>> :{
--- let encodingHouse :: Colonnade Headed House String
---     encodingHouse = mconcat
+-- let colHouse :: Colonnade Headed House String
+--     colHouse = mconcat
 --       [ headed "Color" (show . color)
 --       , headed "Price" (showDollar . price)
 --       ]
 -- :}
 --
 -- >>> let houses = [House Green 170000, House Blue 115000, House Green 150000]
--- >>> putStr (ascii encodingHouse houses)
+-- >>> putStr (ascii colHouse houses)
 -- +-------+---------+
 -- | Color | Price   |
 -- +-------+---------+
@@ -111,8 +112,14 @@ headless :: (a -> c) -> Colonnade Headless a c
 headless = singleton Headless
 
 -- | A single column with any kind of header. This is not typically needed.
-singleton :: f c -> (a -> c) -> Colonnade f a c
+singleton :: h c -> (a -> c) -> Colonnade h a c
 singleton h = Colonnade . Vector.singleton . OneColonnade h
+
+-- | Map over the content in the header. This is similar performing 'fmap'
+--   on a 'Colonnade' except that the body content is unaffected.
+mapHeaderContent :: Functor h => (c -> c) -> Colonnade h a c -> Colonnade h a c
+mapHeaderContent f (Colonnade v) = 
+  Colonnade (Vector.map (\(OneColonnade h e) -> OneColonnade (fmap f h) e) v)
 
 -- | Lift a column over a 'Maybe'. For example, if some people
 --   have houses and some do not, the data that pairs them together
@@ -134,7 +141,7 @@ singleton h = Colonnade . Vector.singleton . OneColonnade h
 -- let colOwners :: Colonnade Headed (Person,Maybe House) String
 --     colOwners = mconcat
 --       [ lmap fst colPerson
---       , lmap snd (fromMaybe "" encodingHouse)
+--       , lmap snd (fromMaybe "" colHouse)
 --       ]
 -- :}
 --
@@ -219,21 +226,65 @@ replaceWhen newContent p (Colonnade v) = Colonnade
     ) v
   )
 
-toCornice :: Colonnade Headed a c -> Cornice Base a c
-toCornice = CorniceBase
+-- | Augment a 'Colonnade' with a header spans over all of the
+--   existing headers. This is best demonstrated by example. 
+--   Let\'s consider how we might encode a pairing of the people 
+--   and houses from the initial example:
+--   
+--   >>> let personHomePairs = zip people houses
+--   >>> let colPersonFst = lmap fst colPerson
+--   >>> let colHouseSnd = lmap snd colHouse
+--   >>> putStr (ascii (colPersonFst <> colHouseSnd) personHomePairs)
+--   +-------+-----+-------+---------+
+--   | Name  | Age | Color | Price   |
+--   +-------+-----+-------+---------+
+--   | David | 63  | Green | $170000 |
+--   | Ava   | 34  | Blue  | $115000 |
+--   | Sonia | 12  | Green | $150000 |
+--   +-------+-----+-------+---------+
+--   
+--   This tabular encoding leaves something to be desired. The heading
+--   not indicate that the name and age refer to a person and that
+--   the color and price refer to a house. Without reaching for 'Cornice',
+--   we can still improve this situation with 'mapHeaderContent':
+--
+--   >>> let colPersonFst' = mapHeaderContent ("Person " ++) colPersonFst
+--   >>> let colHouseSnd' = mapHeaderContent ("House " ++) colHouseSnd
+--   >>> putStr (ascii (colPersonFst' <> colHouseSnd') personHomePairs)
+--   +-------------+------------+-------------+-------------+
+--   | Person Name | Person Age | House Color | House Price |
+--   +-------------+------------+-------------+-------------+
+--   | David       | 63         | Green       | $170000     |
+--   | Ava         | 34         | Blue        | $115000     |
+--   | Sonia       | 12         | Green       | $150000     |
+--   +-------------+------------+-------------+-------------+
+--
+--   This is much better, but for longer tables, the redundancy
+--   of prefixing many column headers can become annoying. The solution
+--   that a 'Cornice' offers is to nest headers:
+--   
+--   >>> let cor = mconcat [cap "Person" colPersonFst, cap "House" colHouseSnd]
+--   >>> :t cor
+--   cor :: Cornice ('Cap 'Base) (Person, House) [Char]
+--   >>> putStr (asciiCapped cor personHomePairs)
+--   foo
+--   
+cap :: c -> Colonnade Headed a c -> Cornice (Cap Base) a c
+cap h = CorniceCap . Vector.singleton . OneCornice h . CorniceBase
 
-cap :: c -> Cornice p a c -> Cornice (Cap p) a c
-cap h cor = CorniceCap (V.singleton (OneCornice h cor))
+recap :: c -> Cornice p a c -> Cornice (Cap p) a c
+recap h cor = CorniceCap (Vector.singleton (OneCornice h cor))
 
-
-asciiMulti :: Foldable f
+asciiCapped :: Foldable f
   => Cornice p a String -- ^ columnar encoding
   -> f a -- ^ rows
   -> String
-asciiMulti cor xs =
+asciiCapped cor xs =
   let annCor = CE.annotateFinely (\x y -> x + y + 3) id 
         List.length xs cor
-   in CE.headersMonoidal (Right (\s -> s ++ "\n")) (\sz c -> rightPad sz ' ' c) annCor
+   in CE.headersMonoidal "|"
+        (Right (\s -> "|" ++ s ++ "\n")) 
+        (\sz c -> " " ++ rightPad sz ' ' c ++ " |") annCor
       
 
 -- | Render a collection of rows as an ascii table. The table\'s columns are
