@@ -1,12 +1,19 @@
+
+
 -- | Build backend-agnostic columnar encodings that can be 
 --   used to visualize tabular data.
 module Colonnade
   ( -- * Example
     -- $setup
     -- * Types
+    -- ** Colonnade
     Colonnade
   , Headed
   , Headless
+    -- ** Cornice
+  , Cornice
+  , Pillar(..)
+  , Fascia(..)
     -- * Create
   , headed
   , headless
@@ -17,18 +24,19 @@ module Colonnade
   , bool
   , replaceWhen
   , modifyWhen
-  , mapContent
+    -- * Cornice
+  , cap
+  , recap
     -- * Ascii Table
   , ascii
   ) where
 
 import Colonnade.Internal
-import qualified Colonnade.Encode as Encode
-import Data.Vector (Vector)
 import Data.Foldable
 import Data.Monoid (Endo(..))
 import Control.Monad
-import Data.Functor.Contravariant
+import qualified Colonnade.Encode as Encode
+import qualified Colonnade.Cornice.Encode as CE
 import qualified Data.Bool
 import qualified Data.Maybe
 import qualified Data.List as List
@@ -40,7 +48,7 @@ import qualified Data.Vector as Vector
 -- used for the remainder of the examples in the docs:
 --
 -- >>> import Data.Monoid (mconcat,(<>))
--- >>> import Data.Functor.Contravariant (contramap)
+-- >>> import Data.Profunctor (lmap)
 --
 -- The data types we wish to encode are:
 --
@@ -51,7 +59,7 @@ import qualified Data.Vector as Vector
 -- One potential columnar encoding of a @Person@ would be:
 --
 -- >>> :{
--- let colPerson :: Colonnade Headed String Person
+-- let colPerson :: Colonnade Headed Person String
 --     colPerson = mconcat
 --       [ headed "Name" name
 --       , headed "Age" (show . age)
@@ -76,7 +84,7 @@ import qualified Data.Vector as Vector
 --
 -- >>> let showDollar = (('$':) . show) :: Int -> String
 -- >>> :{
--- let encodingHouse :: Colonnade Headed String House
+-- let encodingHouse :: Colonnade Headed House String
 --     encodingHouse = mconcat
 --       [ headed "Color" (show . color)
 --       , headed "Price" (showDollar . price)
@@ -95,15 +103,15 @@ import qualified Data.Vector as Vector
 
 
 -- | A single column with a header.
-headed :: c -> (a -> c) -> Colonnade Headed c a
+headed :: c -> (a -> c) -> Colonnade Headed a c
 headed h = singleton (Headed h)
 
 -- | A single column without a header.
-headless :: (a -> c) -> Colonnade Headless c a
+headless :: (a -> c) -> Colonnade Headless a c
 headless = singleton Headless
 
 -- | A single column with any kind of header. This is not typically needed.
-singleton :: f c -> (a -> c) -> Colonnade f c a
+singleton :: f c -> (a -> c) -> Colonnade f a c
 singleton h = Colonnade . Vector.singleton . OneColonnade h
 
 -- | Lift a column over a 'Maybe'. For example, if some people
@@ -123,10 +131,10 @@ singleton h = Colonnade . Vector.singleton . OneColonnade h
 -- the help of 'fromMaybe':
 --
 -- >>> :{
--- let colOwners :: Colonnade Headed String (Person,Maybe House)
+-- let colOwners :: Colonnade Headed (Person,Maybe House) String
 --     colOwners = mconcat
---       [ contramap fst colPerson
---       , contramap snd (fromMaybe "" encodingHouse)
+--       [ lmap fst colPerson
+--       , lmap snd (fromMaybe "" encodingHouse)
 --       ]
 -- :}
 --
@@ -138,7 +146,7 @@ singleton h = Colonnade . Vector.singleton . OneColonnade h
 -- | Ruth   | 25  | Red   | $125000 |
 -- | Sonia  | 12  | Green | $145000 |
 -- +--------+-----+-------+---------+
-fromMaybe :: c -> Colonnade f c a -> Colonnade f c (Maybe a)
+fromMaybe :: c -> Colonnade f a c -> Colonnade f (Maybe a) c
 fromMaybe c (Colonnade v) = Colonnade $ flip Vector.map v $
   \(OneColonnade h encode) -> OneColonnade h (maybe c encode)
 
@@ -150,10 +158,10 @@ fromMaybe c (Colonnade v) = Colonnade $ flip Vector.map v $
 -- >>> let allColors = [Red,Green,Blue]
 -- >>> let encColor = columns (\c1 c2 -> if c1 == c2 then "✓" else "") (Headed . show) allColors
 -- >>> :t encColor
--- encColor :: Colonnade Headed [Char] Color
--- >>> let encHouse = headed "Price" (showDollar . price) <> contramap color encColor
+-- encColor :: Colonnade Headed Color [Char]
+-- >>> let encHouse = headed "Price" (showDollar . price) <> lmap color encColor
 -- >>> :t encHouse
--- encHouse :: Colonnade Headed [Char] House
+-- encHouse :: Colonnade Headed House [Char]
 -- >>> putStr (ascii encHouse houses)
 -- +---------+-----+-------+------+
 -- | Price   | Red | Green | Blue |
@@ -166,7 +174,7 @@ columns :: Foldable g
   => (b -> a -> c) -- ^ Cell content function
   -> (b -> f c) -- ^ Header content function
   -> g b -- ^ Basis for column encodings
-  -> Colonnade f c a
+  -> Colonnade f a c
 columns getCell getHeader = id
   . Colonnade
   . Vector.map (\b -> OneColonnade (getHeader b) (getCell b))
@@ -178,7 +186,7 @@ bool ::
   -> (a -> Bool) -- ^ Predicate
   -> (a -> c) -- ^ Contents when predicate is false
   -> (a -> c) -- ^ Contents when predicate is true
-  -> Colonnade f c a
+  -> Colonnade f a c
 bool h p onTrue onFalse = singleton h (Data.Bool.bool <$> onFalse <*> onTrue <*> p)
 
 -- | Modify the contents of cells in rows whose values satisfy the
@@ -188,8 +196,8 @@ bool h p onTrue onFalse = singleton h (Data.Bool.bool <$> onFalse <*> onTrue <*>
 modifyWhen ::
      (c -> c) -- ^ Content change
   -> (a -> Bool) -- ^ Row predicate
-  -> Colonnade f c a -- ^ Original 'Colonnade'
-  -> Colonnade f c a
+  -> Colonnade f a c -- ^ Original 'Colonnade'
+  -> Colonnade f a c
 modifyWhen changeContent p (Colonnade v) = Colonnade
   ( Vector.map
     (\(OneColonnade h encode) -> OneColonnade h $ \a ->
@@ -202,8 +210,8 @@ modifyWhen changeContent p (Colonnade v) = Colonnade
 replaceWhen ::
      c -- ^ New content
   -> (a -> Bool) -- ^ Row predicate
-  -> Colonnade f c a -- ^ Original 'Colonnade'
-  -> Colonnade f c a
+  -> Colonnade f a c -- ^ Original 'Colonnade'
+  -> Colonnade f a c
 replaceWhen newContent p (Colonnade v) = Colonnade
   ( Vector.map
     (\(OneColonnade h encode) -> OneColonnade h $ \a ->
@@ -211,68 +219,68 @@ replaceWhen newContent p (Colonnade v) = Colonnade
     ) v
   )
 
--- | 'Colonnade' is covariant in its content type. Consequently, it can be
---   mapped over. There is no standard typeclass for types that are covariant
---   in their second-to-last argument, so this function is provided for
---   situations that require this.
-mapContent :: Functor f => (c1 -> c2) -> Colonnade f c1 a -> Colonnade f c2 a
-mapContent f (Colonnade v) = Colonnade
-  $ Vector.map (\(OneColonnade h c) -> (OneColonnade (fmap f h) (f . c))) v
+toCornice :: Colonnade Headed a c -> Cornice Base a c
+toCornice = CorniceBase
+
+cap :: c -> Cornice p a c -> Cornice (Cap p) a c
+cap h cor = CorniceCap (V.singleton (OneCornice h cor))
+
+
+asciiMulti :: Foldable f
+  => Cornice p a String -- ^ columnar encoding
+  -> f a -- ^ rows
+  -> String
+asciiMulti cor xs =
+  let annCor = CE.annotateFinely (\x y -> x + y + 3) id 
+        List.length xs cor
+   in CE.headersMonoidal (Right (\s -> s ++ "\n")) (\sz c -> rightPad sz ' ' c) annCor
+      
 
 -- | Render a collection of rows as an ascii table. The table\'s columns are
 -- specified by the given 'Colonnade'. This implementation is inefficient and
 -- does not provide any wrapping behavior. It is provided so that users can
--- try out @colonnade@ in ghci and so that @doctest@ can verify examples
+-- try out @colonnade@ in ghci and so that @doctest@ can verify example
 -- code in the haddocks.
 ascii :: Foldable f
-  => Colonnade Headed String a -- ^ columnar encoding
+  => Colonnade Headed a String -- ^ columnar encoding
   -> f a -- ^ rows
   -> String
-ascii enc xs =
-  let theHeader :: [(Int,String)]
-      theHeader = (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ")) (toList (Encode.header id enc))
-      theBody :: [[(Int,String)]]
-      theBody = map (zip (enumFrom 0) . map (\s -> " " ++ s ++ " ") . toList . Encode.row id enc) (toList xs)
-      sizes :: [Int]
-      sizes = ($ replicate (length theHeader) 1) $ appEndo $ mconcat
-        [ foldMap (\(i,str) -> Endo (replaceAt i (length str))) theHeader
-        , (foldMap . foldMap) (\(i,str) -> Endo (replaceAt i (length str))) theBody
+ascii col xs = 
+  let sizedCol = Encode.sizeColumns List.length xs col
+      divider = concat
+        [ "+" 
+        , Encode.headerMonoidalFull sizedCol 
+             (\(Sized sz _) -> hyphens (sz + 2) ++ "+")
+        , "\n"
         ]
-      paddedHeader :: [String]
-      paddedHeader = map (\(i,str) -> rightPad (atDef 1 sizes i) ' ' str) theHeader
-      paddedBody :: [[String]]
-      paddedBody = (map . map) (\(i,str) -> rightPad (atDef 1 sizes i) ' ' str) theBody
-      divider :: String
-      divider = "+" ++ join (List.intersperse "+" (map (\i -> replicate i '-') sizes)) ++ "+"
-      headerStr :: String
-      headerStr = "|" ++ join (List.intersperse "|" paddedHeader) ++ "|"
-      bodyStr :: String
-      bodyStr = List.unlines (map ((\s -> "|" ++ s ++ "|") . join . List.intersperse "|") paddedBody)
-   in divider ++ "\n" ++ headerStr
-              ++ "\n" ++ divider
-              ++ "\n" ++ bodyStr ++ divider ++ "\n"
-
-
--- this has no effect if the index is out of bounds
-replaceAt :: Ord a => Int -> a -> [a] -> [a]
-replaceAt _ _ [] = []
-replaceAt n v (a:as) = if n > 0
-  then a : replaceAt (n - 1) v as
-  else (max v a) : as
+      rowContents = foldMap
+        (\x -> concat
+           [ "|"
+           , Encode.rowMonoidalHeader 
+               sizedCol
+               (\(Sized sz _) c -> " " ++ rightPad sz ' ' c ++ " |")
+               x
+           , "\n"
+           ]
+        ) xs
+   in List.concat
+      [ divider
+      , concat
+         [ "|"
+         , Encode.headerMonoidalFull sizedCol
+             (\(Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
+         , "\n"
+         ]
+      , divider
+      , rowContents
+      , divider
+      ]
+      
+hyphens :: Int -> String
+hyphens n = List.replicate n '-'
 
 rightPad :: Int -> a -> [a] -> [a]
 rightPad m a xs = take m $ xs ++ repeat a
-
-atDef :: a -> [a] -> Int -> a
-atDef def = Data.Maybe.fromMaybe def .^ atMay where
-  (.^) f g x1 x2 = f (g x1 x2)
-  atMay = eitherToMaybe .^ at_
-  eitherToMaybe = either (const Nothing) Just
-  at_ xs o | o < 0 = Left $ "index must not be negative, index=" ++ show o
-           | otherwise = f o xs
-      where f 0 (z:_) = Right z
-            f i (_:zs) = f (i-1) zs
-            f i [] = Left $ "index too large, index=" ++ show o ++ ", length=" ++ show (o-i)
 
 -- data Company = Company String String Int
 -- 

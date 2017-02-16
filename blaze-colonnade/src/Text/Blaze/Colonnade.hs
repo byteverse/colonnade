@@ -301,40 +301,69 @@ builderCell = lazyTextCell . TBuilder.toLazyText
 --   used to add attributes to the generated @\<tr\>@ elements.
 encodeTable ::
      (Foldable f, Foldable h)
-  => Maybe Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
+  => Maybe (Attribute,Attribute) -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
   -> Attribute -- ^ Attributes of @\<tbody\>@ element
   -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
   -> ((Html -> Html) -> c -> Html) -- ^ Wrap content and convert to 'Html'
   -> Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade h c a -- ^ How to encode data as a row
+  -> Colonnade h a c -- ^ How to encode data as a row
   -> f a -- ^ Collection of data
   -> Html
 encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
   H.table ! tableAttrs $ do
-    for_ mtheadAttrs $ \theadAttrs -> do
-      H.thead ! theadAttrs $ do
+    for_ mtheadAttrs $ \(theadAttrs,theadTrAttrs) -> do
+      H.thead ! theadAttrs $ H.tr ! theadTrAttrs $ do
         Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
-    H.tbody ! tbodyAttrs $ do
-      forM_ xs $ \x -> do
-        H.tr ! trAttrs x $ Encode.rowMonoidal colonnade (wrapContent H.td) x
+    encodeBody trAttrs wrapContent tbodyAttrs colonnade xs
+
+encodeTieredHeaderTable :: Foldable f
+  => Attribute -- ^ Attributes of @\<thead\>@ 
+  -> Attribute -- ^ Attributes of @\<tbody\>@ element
+  -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element in the @\<tbody\>@
+  -> ((Html -> Html) -> c -> Html) -- ^ Wrap content and convert to 'Html'
+  -> Attribute -- ^ Attributes of @\<table\>@ element
+  -> Fascia p Attribute -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice p a c 
+  -> f a -- ^ Collection of data
+  -> Html
+encodeTieredHeaderTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs cornice xs = do
+  let colonnade = CE.discard cornice
+      annCornice = annotate cornice
+  H.table ! tableAttrs $ do
+    H.thead ! theadAttrs $ H.tr ! trAttrs $ do
+      Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
+  encodeBody trAttrs wrapContent tbodyAttrs colonnade xs
+
+encodeBody :: (Foldable h, Foldable f)
+  => (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
+  -> ((Html -> Html) -> c -> Html) -- ^ Wrap content and convert to 'Html'
+  -> Attribute -- ^ Attributes of @\<tbody\>@ element
+  -> Colonnade h a c -- ^ How to encode data as a row
+  -> f a -- ^ Collection of data
+  -> Html
+encodeBody trAttrs wrapContent tbodyAttrs colonnade xs = do
+  H.tbody ! tbodyAttrs $ do
+    forM_ xs $ \x -> do
+      H.tr ! trAttrs x $ Encode.rowMonoidal colonnade (wrapContent H.td) x
+  
 
 -- | Encode a table with a header. Table cells may have attributes
 --   applied to them.
 encodeHeadedCellTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headed Cell a -- ^ How to encode data as columns
+  -> Colonnade Headed a Cell -- ^ How to encode data as columns
   -> f a -- ^ Collection of data
   -> Html
 encodeHeadedCellTable = encodeTable
-  (Just mempty) mempty (const mempty) htmlFromCell 
+  (Just (mempty,mempty)) mempty (const mempty) htmlFromCell 
 
 -- | Encode a table without a header. Table cells may have attributes
 --   applied to them.
 encodeHeadlessCellTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headless Cell a -- ^ How to encode data as columns
+  -> Colonnade Headless a Cell -- ^ How to encode data as columns
   -> f a -- ^ Collection of data
   -> Html
 encodeHeadlessCellTable = encodeTable
@@ -345,18 +374,18 @@ encodeHeadlessCellTable = encodeTable
 encodeHeadedHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headed Html a -- ^ How to encode data as columns
+  -> Colonnade Headed a Html -- ^ How to encode data as columns
   -> f a -- ^ Collection of data
   -> Html
 encodeHeadedHtmlTable = encodeTable
-  (Just mempty) mempty (const mempty) ($) 
+  (Just (mempty,mempty)) mempty (const mempty) ($) 
 
 -- | Encode a table without a header. Table cells cannot have attributes
 --   applied to them.
 encodeHeadlessHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headless Html a -- ^ How to encode data as columns
+  -> Colonnade Headless a Html -- ^ How to encode data as columns
   -> f a -- ^ Collection of data
   -> Html
 encodeHeadlessHtmlTable = encodeTable
