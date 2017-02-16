@@ -11,6 +11,7 @@ module Colonnade.Cornice.Encode
   , endow
   , discard
   , headersMonoidal
+  , uncapAnnotated
   ) where
 
 import Colonnade.Internal
@@ -34,6 +35,15 @@ endow f x = case x of
   go :: forall p'. c -> Cornice p' a c -> Vector (OneColonnade Headed a c)
   go c (CorniceBase (Colonnade v)) = V.map (mapOneColonnadeHeader (f c)) v
   go c (CorniceCap v) = V.concatMap (\(OneCornice h b) -> go (f c h) b) v
+
+uncapAnnotated :: forall p a c. AnnotatedCornice p a c -> Colonnade (Sized Headed) a c
+uncapAnnotated x = case x of
+  AnnotatedCorniceBase _ colonnade -> colonnade
+  AnnotatedCorniceCap _ v -> Colonnade (V.concatMap (\(OneCornice _ b) -> go b) v)
+  where
+  go :: forall p'. AnnotatedCornice p' a c -> Vector (OneColonnade (Sized Headed) a c)
+  go (AnnotatedCorniceBase _ (Colonnade v)) = v
+  go (AnnotatedCorniceCap _ v) = V.concatMap (\(OneCornice _ b) -> go b) v
 
 annotate :: Cornice p a c -> AnnotatedCornice p a c
 annotate = go where
@@ -148,38 +158,38 @@ mapOneColonnadeHeader f (OneColonnade h b) = OneColonnade (fmap f h) b
 
 headersMonoidal :: forall r m c p a.
      Monoid m
-  => Either (Fascia p r, r -> m -> m) (m -> m) -- ^ Apply the Fascia header row content
-  -> [Int -> c -> m] -- ^ Build content from cell content and size
+  => Maybe (Fascia p r, r -> m -> m) -- ^ Apply the Fascia header row content
+  -> [(Int -> c -> m, m -> m)] -- ^ Build content from cell content and size
   -> AnnotatedCornice p a c
   -> m
 headersMonoidal wrapRow fromContentList = go wrapRow
   where
-  go :: forall p'. Either (Fascia p' r, r -> m -> m) (m -> m) -> AnnotatedCornice p' a c -> m
+  go :: forall p'. Maybe (Fascia p' r, r -> m -> m) -> AnnotatedCornice p' a c -> m
   go ef (AnnotatedCorniceBase _ (Colonnade v)) = 
     let g :: m -> m
         g m = case ef of
-          Right f -> f m
-          Left (FasciaBase r, f) -> f r m
-     in foldMap (\fromContent -> g 
+          Nothing -> m
+          Just (FasciaBase r, f) -> f r m
+     in g $ foldMap (\(fromContent,wrap) -> wrap 
           (foldMap (\(OneColonnade (Sized sz (Headed h)) _) -> 
             (fromContent sz h)) v)) fromContentList
   go ef (AnnotatedCorniceCap _ v) = 
     let g :: m -> m
         g m = case ef of
-          Right f -> f m
-          Left (FasciaCap r _, f) -> f r m
-     in g (foldMap (\(OneCornice h b) -> 
+          Nothing -> m
+          Just (FasciaCap r _, f) -> f r m
+     in g (foldMap (\(fromContent,wrap) -> wrap (foldMap (\(OneCornice h b) -> 
           (case size b of
             Nothing -> mempty
             Just sz -> fromContent sz h)
-          ) v)
+          ) v)) fromContentList)
           <> case ef of
-               Right f -> case flattenAnnotated v of
+               Nothing -> case flattenAnnotated v of
                  Nothing -> mempty
-                 Just annCoreNext -> go (Right f) annCoreNext
-               Left (FasciaCap _ fn, f) -> case flattenAnnotated v of
+                 Just annCoreNext -> go Nothing annCoreNext
+               Just (FasciaCap _ fn, f) -> case flattenAnnotated v of
                  Nothing -> mempty
-                 Just annCoreNext -> go (Left (fn,f)) annCoreNext
+                 Just annCoreNext -> go (Just (fn,f)) annCoreNext
 
 flattenAnnotated :: Vector (OneCornice AnnotatedCornice p a c) -> Maybe (AnnotatedCornice p a c)
 flattenAnnotated v = case v V.!? 0 of 

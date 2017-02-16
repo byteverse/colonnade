@@ -84,14 +84,9 @@ import qualified Data.Vector as Vector
 -- Similarly, we can build a table of houses with:
 --
 -- >>> let showDollar = (('$':) . show) :: Int -> String
--- >>> :{
--- let colHouse :: Colonnade Headed House String
---     colHouse = mconcat
---       [ headed "Color" (show . color)
---       , headed "Price" (showDollar . price)
---       ]
--- :}
---
+-- >>> colHouse = mconcat [headed "Color" (show . color), headed "Price" (showDollar . price)]
+-- >>> :t colHouse
+-- colHouse :: Colonnade Headed House [Char]
 -- >>> let houses = [House Green 170000, House Blue 115000, House Green 150000]
 -- >>> putStr (ascii colHouse houses)
 -- +-------+---------+
@@ -267,11 +262,51 @@ replaceWhen newContent p (Colonnade v) = Colonnade
 --   >>> :t cor
 --   cor :: Cornice ('Cap 'Base) (Person, House) [Char]
 --   >>> putStr (asciiCapped cor personHomePairs)
---   foo
+--   +-------------+-----------------+
+--   | Person      | House           |
+--   +-------+-----+-------+---------+
+--   | Name  | Age | Color | Price   |
+--   +-------+-----+-------+---------+
+--   | David | 63  | Green | $170000 |
+--   | Ava   | 34  | Blue  | $115000 |
+--   | Sonia | 12  | Green | $150000 |
+--   +-------+-----+-------+---------+
 --   
 cap :: c -> Colonnade Headed a c -> Cornice (Cap Base) a c
 cap h = CorniceCap . Vector.singleton . OneCornice h . CorniceBase
 
+-- | Add another cap to a cornice. There is no limit to how many times
+--   this can be applied:
+--   
+--   >>> data Day = Weekday | Weekend deriving (Show)
+--   >>> :{
+--   let cost :: Int -> Day -> String
+--       cost base w = case w of
+--         Weekday -> showDollar base
+--         Weekend -> showDollar (base + 1)
+--       colStandard = foldMap (\c -> headed c (cost 8)) ["Yt","Ad","Sr"]
+--       colSpecial = mconcat [headed "Stud" (cost 6), headed "Mltry" (cost 7)]
+--       corStatus = mconcat
+--         [ cap "Standard" colStandard
+--         , cap "Special" colSpecial
+--         ] 
+--       corShowtime = mconcat
+--         [ recap "" (cap "" (headed "Day" show))
+--         , foldMap (\c -> recap c corStatus) ["Matinee","Evening"]
+--         ]
+--   :}
+--
+--   >>> putStr (asciiCapped corShowtime [Weekday,Weekend])
+--   +---------+-----------------------------+-----------------------------+
+--   |         | Matinee                     | Evening                     |
+--   +---------+--------------+--------------+--------------+--------------+
+--   |         | Standard     | Special      | Standard     | Special      |
+--   +---------+----+----+----+------+-------+----+----+----+------+-------+
+--   | Day     | Yt | Ad | Sr | Stud | Mltry | Yt | Ad | Sr | Stud | Mltry |
+--   +---------+----+----+----+------+-------+----+----+----+------+-------+
+--   | Weekday | $8 | $8 | $8 | $6   | $7    | $8 | $8 | $8 | $6   | $7    |
+--   | Weekend | $9 | $9 | $9 | $7   | $8    | $9 | $9 | $9 | $7   | $8    |
+--   +---------+----+----+----+------+-------+----+----+----+------+-------+
 recap :: c -> Cornice p a c -> Cornice (Cap p) a c
 recap h cor = CorniceCap (Vector.singleton (OneCornice h cor))
 
@@ -282,9 +317,12 @@ asciiCapped :: Foldable f
 asciiCapped cor xs =
   let annCor = CE.annotateFinely (\x y -> x + y + 3) id 
         List.length xs cor
-   in CE.headersMonoidal "|"
-        (Right (\s -> "|" ++ s ++ "\n")) 
-        (\sz c -> " " ++ rightPad sz ' ' c ++ " |") annCor
+      sizedCol = CE.uncapAnnotated annCor
+   in CE.headersMonoidal
+        Nothing 
+        [ (\sz c -> hyphens (sz + 2) ++ "+", \s -> "+" ++ s ++ "\n")
+        , (\sz c -> " " ++ rightPad sz ' ' c ++ " |", \s -> "|" ++ s ++ "\n")
+        ] annCor ++ asciiBody sizedCol xs
       
 
 -- | Render a collection of rows as an ascii table. The table\'s columns are
@@ -304,6 +342,28 @@ ascii col xs =
              (\(Sized sz _) -> hyphens (sz + 2) ++ "+")
         , "\n"
         ]
+   in List.concat
+      [ divider
+      , concat
+         [ "|"
+         , Encode.headerMonoidalFull sizedCol
+             (\(Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
+         , "\n"
+         ]
+      , asciiBody sizedCol xs
+      ]
+
+asciiBody :: Foldable f
+  => Colonnade (Sized Headed) a String
+  -> f a
+  -> String
+asciiBody sizedCol xs =
+  let divider = concat
+        [ "+" 
+        , Encode.headerMonoidalFull sizedCol 
+             (\(Sized sz _) -> hyphens (sz + 2) ++ "+")
+        , "\n"
+        ]
       rowContents = foldMap
         (\x -> concat
            [ "|"
@@ -316,13 +376,6 @@ ascii col xs =
         ) xs
    in List.concat
       [ divider
-      , concat
-         [ "|"
-         , Encode.headerMonoidalFull sizedCol
-             (\(Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
-         , "\n"
-         ]
-      , divider
       , rowContents
       , divider
       ]
