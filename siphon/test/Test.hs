@@ -12,26 +12,25 @@ import Data.ByteString                      (ByteString)
 import Data.Text                            (Text)
 import GHC.Generics                         (Generic)
 import Data.Either.Combinators
-import Colonnade.Types
 import Siphon.Types
 import Data.Functor.Identity
 import Data.Functor.Contravariant           (contramap)
 import Data.Functor.Contravariant.Divisible (divided,conquered)
+import Colonnade (headed,headless,Colonnade,Headed,Headless)
+import Data.Profunctor (lmap)
 import qualified Data.Text                  as Text
 import qualified Data.ByteString.Builder    as Builder
 import qualified Data.ByteString.Lazy       as LByteString
 import qualified Data.ByteString            as ByteString
 import qualified Data.ByteString.Char8      as BC8
-import qualified Colonnade.Decoding         as Decoding
-import qualified Colonnade.Encoding         as Encoding
-import qualified Colonnade.Decoding.ByteString.Char8 as CDB
-import qualified Colonnade.Encoding.ByteString.Char8 as CEB
-import qualified Colonnade.Decoding.Text    as CDT
-import qualified Colonnade.Encoding.Text    as CET
+import qualified Colonnade                  as Colonnade
 import qualified Siphon.Encoding            as SE
 import qualified Siphon.Decoding            as SD
 import qualified Siphon.Content             as SC
 import qualified Pipes.Prelude              as Pipes
+import qualified Data.Text.Lazy as LText
+import qualified Data.Text.Lazy.Builder as TBuilder
+import qualified Data.Text.Lazy.Builder.Int as TBuilder
 import Pipes
 
 main :: IO ()
@@ -122,56 +121,56 @@ fooFromString x = case x of
 decodeFoo :: (c -> String) -> c -> Either String Foo
 decodeFoo f = fooFromString . f
 
-decodingA :: Decoding Headless ByteString (Int,Char,Bool)
+decodingA :: Decolonnade Headless ByteString (Int,Char,Bool)
 decodingA = (,,)
-  <$> Decoding.headless CDB.int
-  <*> Decoding.headless CDB.char
-  <*> Decoding.headless CDB.bool
+  <$> SD.headless dbInt
+  <*> SD.headless dbChar
+  <*> SD.headless dbBool
 
-decodingB :: Decoding Headed ByteString (Int,Char,Bool)
+decodingB :: Decolonnade Headed ByteString (Int,Char,Bool)
 decodingB = (,,)
-  <$> Decoding.headed "number" CDB.int
-  <*> Decoding.headed "letter" CDB.char
-  <*> Decoding.headed "boolean" CDB.bool
+  <$> SD.headed "number" dbInt
+  <*> SD.headed "letter" dbChar
+  <*> SD.headed "boolean" dbBool
 
-encodingA :: Encoding Headless ByteString (Int,Char,Bool)
-encodingA = contramap tripleToPairs
-  $ divided (Encoding.headless CEB.int)
-  $ divided (Encoding.headless CEB.char)
-  $ divided (Encoding.headless CEB.bool)
-  $ conquered
+encodingA :: Colonnade Headless (Int,Char,Bool) ByteString
+encodingA = mconcat
+  [ lmap fst3 (headless ebInt)
+  , lmap snd3 (headless ebChar)
+  , lmap thd3 (headless ebBool)
+  ]
 
-encodingW :: Encoding Headless Text (Int,Char,Bool)
-encodingW = contramap tripleToPairs
-  $ divided (Encoding.headless CET.int)
-  $ divided (Encoding.headless CET.char)
-  $ divided (Encoding.headless CET.bool)
-  $ conquered
+encodingW :: Colonnade Headless (Int,Char,Bool) Text
+encodingW = mconcat
+  [ lmap fst3 (headless etInt)
+  , lmap snd3 (headless etChar)
+  , lmap thd3 (headless etBool)
+  ]
 
-encodingY :: Encoding Headless Text (Foo,Foo,Foo)
-encodingY = contramap tripleToPairs
-  $ divided (Encoding.headless $ encodeFoo Text.pack)
-  $ divided (Encoding.headless $ encodeFoo Text.pack)
-  $ divided (Encoding.headless $ encodeFoo Text.pack)
-  $ conquered
+encodingY :: Colonnade Headless (Foo,Foo,Foo) Text
+encodingY = mconcat
+  [ lmap fst3 (headless $ encodeFoo Text.pack)
+  , lmap snd3 (headless $ encodeFoo Text.pack)
+  , lmap thd3 (headless $ encodeFoo Text.pack)
+  ]
 
-decodingY :: Decoding Headless Text (Foo,Foo,Foo)
+decodingY :: Decolonnade Headless Text (Foo,Foo,Foo)
 decodingY = (,,)
-  <$> Decoding.headless (decodeFoo Text.unpack)
-  <*> Decoding.headless (decodeFoo Text.unpack)
-  <*> Decoding.headless (decodeFoo Text.unpack)
+  <$> SD.headless (decodeFoo Text.unpack)
+  <*> SD.headless (decodeFoo Text.unpack)
+  <*> SD.headless (decodeFoo Text.unpack)
 
-encodingB :: Encoding Headed ByteString (Int,Char,Bool)
-encodingB = contramap tripleToPairs
-  $ divided (Encoding.headed "number" CEB.int)
-  $ divided (Encoding.headed "letter" CEB.char)
-  $ divided (Encoding.headed "boolean" CEB.bool)
-  $ conquered
+encodingB :: Colonnade Headed (Int,Char,Bool) ByteString
+encodingB = mconcat
+  [ lmap fst3 (headed "number" ebInt)
+  , lmap snd3 (headed "letter" ebChar)
+  , lmap thd3 (headed "boolean" ebBool)
+  ]
 
-encodingC :: Encoding Headed ByteString (Int,Char,Bool)
+encodingC :: Colonnade Headed (Int,Char,Bool) ByteString
 encodingC = mconcat
-  [ contramap thd3 $ Encoding.headed "boolean" CEB.bool
-  , contramap snd3 $ Encoding.headed "letter" CEB.char
+  [ lmap thd3 $ headed "boolean" ebBool
+  , lmap snd3 $ headed "letter" ebChar
   ]
 
 tripleToPairs :: (a,b,c) -> (a,(b,(c,())))
@@ -182,8 +181,8 @@ propIsoPipe p as = (Pipes.toList $ each as >-> p) == as
 
 runTestScenario :: (Monoid c, Eq c, Show c)
   => Siphon c
-  -> (Siphon c -> Encoding f c (Int,Char,Bool) -> Pipe (Int,Char,Bool) c Identity ())
-  -> Encoding f c (Int,Char,Bool)
+  -> (Siphon c -> Colonnade f (Int,Char,Bool) c -> Pipe (Int,Char,Bool) c Identity ())
+  -> Colonnade f (Int,Char,Bool) c
   -> c
   -> Assertion
 runTestScenario s p e c =
@@ -193,8 +192,8 @@ runTestScenario s p e c =
 
 runCustomTestScenario :: (Monoid c, Eq c, Show c)
   => Siphon c
-  -> (Siphon c -> Encoding f c a -> Pipe a c Identity ())
-  -> Encoding f c a
+  -> (Siphon c -> Colonnade f a c -> Pipe a c Identity ())
+  -> Colonnade f a c
   -> a
   -> c
   -> Assertion
@@ -224,4 +223,57 @@ snd3 (a,b,c) = b
 -- | Take the third item out of a 3 element tuple
 thd3 :: (a,b,c) -> c
 thd3 (a,b,c) = c
+
+
+dbChar :: ByteString -> Either String Char
+dbChar b = case BC8.length b of
+  1 -> Right (BC8.head b)
+  0 -> Left "cannot decode Char from empty bytestring"
+  _ -> Left "cannot decode Char from multi-character bytestring"
+
+dbInt :: ByteString -> Either String Int
+dbInt b = do
+  (a,bsRem) <- maybe (Left "could not parse int") Right (BC8.readInt b)
+  if ByteString.null bsRem
+    then Right a
+    else Left "found extra characters after int"
+
+dbBool :: ByteString -> Either String Bool
+dbBool b
+  | b == BC8.pack "true" = Right True
+  | b == BC8.pack "false" = Right False
+  | otherwise = Left "must be true or false"
+
+ebChar :: Char -> ByteString
+ebChar = BC8.singleton
+
+ebInt :: Int -> ByteString
+ebInt = LByteString.toStrict
+    . Builder.toLazyByteString 
+    . Builder.intDec
+
+ebBool :: Bool -> ByteString
+ebBool x = case x of
+  True -> BC8.pack "true"
+  False -> BC8.pack "false"
+
+ebByteString :: ByteString -> ByteString
+ebByteString = id
+
+
+etChar :: Char -> Text
+etChar = Text.singleton
+
+etInt :: Int -> Text
+etInt = LText.toStrict
+    . TBuilder.toLazyText
+    . TBuilder.decimal
+
+etText :: Text -> Text
+etText = id
+
+etBool :: Bool -> Text
+etBool x = case x of
+  True -> Text.pack "true"
+  False -> Text.pack "false"
 

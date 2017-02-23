@@ -1,33 +1,28 @@
 module Siphon.Encoding where
 
 import Siphon.Types
-import Colonnade.Types
+import Colonnade (Colonnade,Headed)
 import Pipes (Pipe,yield)
 import qualified Pipes.Prelude as Pipes
-import qualified Colonnade.Encoding as Encoding
+import qualified Colonnade.Encode as E
 
-row :: Siphon c
-    -> Encoding f c a
-    -> a
-    -> c
+row :: Siphon c -> Colonnade f a c -> a -> c
 row (Siphon escape intercalate _ _) e =
-  intercalate . Encoding.runRow escape e
+  intercalate . E.row escape e
 
-header :: Siphon c
-       -> Encoding Headed c a
-       -> c
+header :: Siphon c -> Colonnade Headed a c -> c
 header (Siphon escape intercalate _ _) e =
-  intercalate (Encoding.runHeader escape e)
+  intercalate (E.header escape e)
 
 pipe :: Monad m
   => Siphon c
-  -> Encoding f c a
+  -> Colonnade f a c
   -> Pipe a c m x
 pipe siphon encoding = Pipes.map (row siphon encoding)
 
 headedPipe :: Monad m
   => Siphon c
-  -> Encoding Headed c a
+  -> Colonnade Headed a c
   -> Pipe a c m x
 headedPipe siphon encoding = do
   yield (header siphon encoding)

@@ -1,6 +1,6 @@
 name:                siphon
-version:             0.2
-synopsis:            Generic types and functions for columnar encoding and decoding
+version:             0.6
+synopsis:            Encode and decode CSV files
 description:         Please see README.md
 homepage:            https://github.com/andrewthad/colonnade#readme
 license:             BSD3
@@ -26,7 +26,7 @@ library
     Siphon.Internal.Text
   build-depends:
       base >= 4.7 && < 5
-    , colonnade >= 0.4 && < 0.5
+    , colonnade >= 1.1 && < 1.2
     , text
     , bytestring
     , contravariant
@@ -53,6 +53,7 @@ test-suite siphon-test
     , pipes
     , HUnit
     , test-framework-hunit
+    , profunctors
   ghc-options:         -threaded -rtsopts -with-rtsopts=-N
   default-language:    Haskell2010
 
