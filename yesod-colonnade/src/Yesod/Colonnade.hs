@@ -33,7 +33,7 @@ import Text.Blaze (Attribute,toValue)
 import Data.Foldable
 import qualified Text.Blaze.Html5.Attributes as HA
 import qualified Text.Blaze.Html5 as H
-import qualified Colonnade.Encode as Encode
+import qualified Colonnade.Encode as E
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
@@ -87,13 +87,13 @@ encodeListItems ::
      -- ^ Wrapper for items, often @ul@
   -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
      -- ^ Combines header with data
-  -> Colonnade Headed (Cell site) a
+  -> Colonnade Headed a (Cell site)
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
   -> WidgetT site IO ()
 encodeListItems ulWrap combine enc =
-  ulWrap . Encode.bothMonadic_ enc
+  ulWrap . E.bothMonadic_ enc
     (\(Cell ha hc) (Cell ba bc) ->
       li_ (ha <> ba) (combine hc bc)
     )
@@ -104,13 +104,13 @@ encodeListItems ulWrap combine enc =
 encodeDefinitionTable ::
      Attribute
      -- ^ Attributes of @table@ element.
-  -> Colonnade Headed (Cell site) a
+  -> Colonnade Headed a (Cell site)
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
   -> WidgetT site IO ()
 encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $ 
-  Encode.bothMonadic_ enc
+  E.bothMonadic_ enc
     (\theKey theValue -> tr_ mempty $ do
       widgetFromCell td_ theKey
       widgetFromCell td_ theValue
@@ -122,7 +122,7 @@ encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $
 --   > encodeHeadedCellTable (HA.class_ "table table-striped") ...
 encodeHeadedCellTable :: Foldable f
   => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headed (Cell site) a -- ^ How to encode data as a row
+  -> Colonnade Headed a (Cell site) -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadedCellTable = encodeTable
@@ -130,7 +130,7 @@ encodeHeadedCellTable = encodeTable
 
 encodeHeadlessCellTable :: Foldable f
   => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headless (Cell site) a -- ^ How to encode data as columns
+  -> Colonnade Headless a (Cell site) -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadlessCellTable = encodeTable
@@ -138,7 +138,7 @@ encodeHeadlessCellTable = encodeTable
 
 encodeHeadedWidgetTable :: Foldable f
   => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headed (WidgetT site IO ()) a -- ^ How to encode data as columns
+  -> Colonnade Headed a (WidgetT site IO ()) -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadedWidgetTable = encodeTable
@@ -146,7 +146,7 @@ encodeHeadedWidgetTable = encodeTable
 
 encodeHeadlessWidgetTable :: Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headless (WidgetT site IO ()) a -- ^ How to encode data as columns
+  -> Colonnade Headless a (WidgetT site IO ()) -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadlessWidgetTable = encodeTable
@@ -162,17 +162,17 @@ encodeTable ::
   -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
   -> ((Attribute -> WidgetT site IO () -> WidgetT site IO ()) -> c -> WidgetT site IO ()) -- ^ Wrap content and convert to 'Html'
   -> Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade h c a -- ^ How to encode data as a row
+  -> Colonnade h a c -- ^ How to encode data as a row
   -> f a -- ^ Collection of data
   -> WidgetT site IO ()
 encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
   table_ tableAttrs $ do
     for_ mtheadAttrs $ \theadAttrs -> do
       thead_ theadAttrs $ do
-        Encode.headerMonadicGeneral_ colonnade (wrapContent th_)
+        E.headerMonadicGeneral_ colonnade (wrapContent th_)
     tbody_ tbodyAttrs $ do
       forM_ xs $ \x -> do
-        tr_ (trAttrs x) (Encode.rowMonadic_ colonnade (wrapContent td_) x)
+        tr_ (trAttrs x) (E.rowMonadic_ colonnade (wrapContent td_) x)
 
 widgetFromCell ::
   (Attribute -> WidgetT site IO () -> WidgetT site IO ())
