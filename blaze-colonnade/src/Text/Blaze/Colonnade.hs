@@ -11,7 +11,9 @@
 -- >>> let rows = [("90-100",'A'),("80-89",'B'),("70-79",'C')]
 -- >>> printVeryCompactHtml (encodeHeadedHtmlTable mempty col rows)
 -- <table>
---     <thead><th>Grade</th><th>Letter</th></thead>
+--     <thead>
+--         <tr><th>Grade</th><th>Letter</th></tr>
+--     </thead>
 --     <tbody>
 --         <tr><td>90-100</td><td>A</td></tr>
 --         <tr><td>80-89</td><td>B</td></tr>
@@ -25,6 +27,7 @@ module Text.Blaze.Colonnade
   , encodeHeadedCellTable
   , encodeHeadlessCellTable
   , encodeTable
+  , encodeCappedTable
     -- * Cell
     -- $build
   , Cell(..)
@@ -33,11 +36,12 @@ module Text.Blaze.Colonnade
   , textCell
   , lazyTextCell
   , builderCell
+  , htmlFromCell
     -- * Interactive
   , printCompactHtml
   , printVeryCompactHtml
     -- * Tutorial
-    -- $example
+    -- $setup
 
     -- * Discussion
     -- $discussion
@@ -45,7 +49,7 @@ module Text.Blaze.Colonnade
 
 import Text.Blaze (Attribute,(!))
 import Text.Blaze.Html (Html, toHtml)
-import Colonnade (Colonnade,Headed,Headless)
+import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice)
 import Data.Text (Text)
 import Control.Monad
 import Data.Monoid
@@ -63,17 +67,16 @@ import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
 
--- $example
+-- $setup
 -- We start with a few necessary imports and some example data
 -- types:
 -- 
 -- >>> :set -XOverloadedStrings
 -- >>> import Data.Monoid (mconcat,(<>))
 -- >>> import Data.Char (toLower)
--- >>> import Data.Functor.Contravariant (Contravariant(contramap))
--- >>> import Colonnade (Colonnade,Headed,Headless,headed)
+-- >>> import Data.Profunctor (Profunctor(lmap))
+-- >>> import Colonnade (Colonnade,Headed,Headless,headed,cap,Fascia(..))
 -- >>> import Text.Blaze.Html (Html, toHtml, toValue)
--- >>> import qualified Colonnade as C
 -- >>> import qualified Text.Blaze.Html5 as H
 -- >>> data Department = Management | Sales | Engineering deriving (Show,Eq)
 -- >>> data Employee = Employee { name :: String, department :: Department, age :: Int }
@@ -93,7 +96,7 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- engineers using a @\<strong\>@ tag.
 --
 -- >>> :{
--- let tableEmpA :: Colonnade Headed Html Employee
+-- let tableEmpA :: Colonnade Headed Employee Html
 --     tableEmpA = mconcat
 --       [ headed "Name" $ \emp -> case department emp of
 --           Engineering -> H.strong (toHtml (name emp))
@@ -113,8 +116,10 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- >>> printCompactHtml (encodeHeadedHtmlTable customAttrs tableEmpA employees)
 -- <table class="stylish-table" id="main-table">
 --     <thead>
---         <th>Name</th>
---         <th>Age</th>
+--         <tr>
+--             <th>Name</th>
+--             <th>Age</th>
+--         </tr>
 --     </thead>
 --     <tbody>
 --         <tr>
@@ -146,7 +151,7 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- let\'s build a table that encodes departments:
 --
 -- >>> :{
--- let tableDept :: Colonnade Headed Cell Department
+-- let tableDept :: Colonnade Headed Department Cell
 --     tableDept = mconcat
 --       [ headed "Dept." $ \d -> Cell
 --           (HA.class_ (toValue (map toLower (show d))))
@@ -161,45 +166,35 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- 'encodeHeadedCellTable' instead of 'encodeHeadedHtmlTable':
 --
 -- >>> let twoDepts = [Sales,Management]
--- >>> printCompactHtml (encodeHeadedCellTable customAttrs tableDept twoDepts)
+-- >>> printVeryCompactHtml (encodeHeadedCellTable customAttrs tableDept twoDepts)
 -- <table class="stylish-table" id="main-table">
 --     <thead>
---         <th>Dept.</th>
+--         <tr><th>Dept.</th></tr>
 --     </thead>
 --     <tbody>
---         <tr>
---             <td class="sales">Sales</td>
---         </tr>
---         <tr>
---             <td class="management">Management</td>
---         </tr>
+--         <tr><td class="sales">Sales</td></tr>
+--         <tr><td class="management">Management</td></tr>
 --     </tbody>
 -- </table>
 -- 
 -- The attributes on the @\<td\>@ elements show up as they are expected to.
--- Now, we take advantage of the @Contravariant@ instance of 'Colonnade' to allow
+-- Now, we take advantage of the @Profunctor@ instance of 'Colonnade' to allow
 -- this to work on @Employee@\'s instead:
 --
--- >>> :t contramap
--- contramap :: Contravariant f => (a -> b) -> f b -> f a
--- >>> let tableEmpB = contramap department tableDept
+-- >>> :t lmap
+-- lmap :: Profunctor p => (a -> b) -> p b c -> p a c
+-- >>> let tableEmpB = lmap department tableDept
 -- >>> :t tableEmpB
--- tableEmpB :: Colonnade Headed Cell Employee
--- >>> printCompactHtml (encodeHeadedCellTable customAttrs tableEmpB employees)
+-- tableEmpB :: Colonnade Headed Employee Cell
+-- >>> printVeryCompactHtml (encodeHeadedCellTable customAttrs tableEmpB employees)
 -- <table class="stylish-table" id="main-table">
 --     <thead>
---         <th>Dept.</th>
+--         <tr><th>Dept.</th></tr>
 --     </thead>
 --     <tbody>
---         <tr>
---             <td class="sales">Sales</td>
---         </tr>
---         <tr>
---             <td class="engineering">Engineering</td>
---         </tr>
---         <tr>
---             <td class="management">Management</td>
---         </tr>
+--         <tr><td class="sales">Sales</td></tr>
+--         <tr><td class="engineering">Engineering</td></tr>
+--         <tr><td class="management">Management</td></tr>
 --     </tbody>
 -- </table>
 -- 
@@ -212,23 +207,25 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- prevents a straightforward monoidal append:
 --
 -- >>> :t tableEmpA
--- tableEmpA :: Colonnade Headed Html Employee
+-- tableEmpA :: Colonnade Headed Employee Html
 -- >>> :t tableEmpB
--- tableEmpB :: Colonnade Headed Cell Employee
+-- tableEmpB :: Colonnade Headed Employee Cell
 --
--- We can upcast the content type with 'Colonnade.mapContent'.
+-- We can upcast the content type with 'fmap'.
 -- Monoidal append is then well-typed, and the resulting 'Colonnade'
 -- can be applied to the employees:
 --
--- >>> let tableEmpC = C.mapContent htmlCell tableEmpA <> tableEmpB
+-- >>> let tableEmpC = fmap htmlCell tableEmpA <> tableEmpB
 -- >>> :t tableEmpC
--- tableEmpC :: Colonnade Headed Cell Employee
+-- tableEmpC :: Colonnade Headed Employee Cell
 -- >>> printCompactHtml (encodeHeadedCellTable customAttrs tableEmpC employees)
 -- <table class="stylish-table" id="main-table">
 --     <thead>
---         <th>Name</th>
---         <th>Age</th>
---         <th>Dept.</th>
+--         <tr>
+--             <th>Name</th>
+--             <th>Age</th>
+--             <th>Dept.</th>
+--         </tr>
 --     </thead>
 --     <tbody>
 --         <tr>
@@ -316,7 +313,43 @@ encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
         Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
     encodeBody trAttrs wrapContent tbodyAttrs colonnade xs
 
-encodeTieredHeaderTable :: Foldable f
+-- | Encode a table with tiered header rows.
+-- >>> let cor = mconcat [cap "Personal" (fmap htmlCell tableEmpA), cap "Work" tableEmpB]
+-- >>> let fascia = FasciaCap (HA.class_ "category") (FasciaBase (HA.class_ "subcategory"))
+-- >>> printCompactHtml (encodeCappedCellTable mempty fascia cor [head employees])
+-- <table>
+--     <thead>
+--         <tr class="category">
+--             <th colspan="2">Personal</th>
+--             <th colspan="1">Work</th>
+--         </tr>
+--         <tr class="subcategory">
+--             <th colspan="1">Name</th>
+--             <th colspan="1">Age</th>
+--             <th colspan="1">Dept.</th>
+--         </tr>
+--     </thead>
+--     <tbody>
+--         <tr>
+--             <td>Thaddeus</td>
+--             <td>34</td>
+--             <td class="sales">Sales</td>
+--         </tr>
+--     </tbody>
+-- </table>
+
+encodeCappedCellTable :: Foldable f
+  => Attribute -- ^ Attributes of @\<table\>@ element
+  -> Fascia p Attribute -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice p a Cell 
+  -> f a -- ^ Collection of data
+  -> Html
+encodeCappedCellTable = encodeCappedTable mempty mempty (const mempty) htmlFromCell
+
+-- | Encode a table with tiered header rows. This is the most general function
+--   in this library for encoding a 'Cornice'.
+--
+encodeCappedTable :: Foldable f
   => Attribute -- ^ Attributes of @\<thead\>@ 
   -> Attribute -- ^ Attributes of @\<tbody\>@ element
   -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element in the @\<tbody\>@
@@ -326,13 +359,18 @@ encodeTieredHeaderTable :: Foldable f
   -> Cornice p a c 
   -> f a -- ^ Collection of data
   -> Html
-encodeTieredHeaderTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs cornice xs = do
-  let colonnade = CE.discard cornice
-      annCornice = annotate cornice
+encodeCappedTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs fascia cornice xs = do
+  let colonnade = Encode.discard cornice
+      annCornice = Encode.annotate cornice
   H.table ! tableAttrs $ do
-    H.thead ! theadAttrs $ H.tr ! trAttrs $ do
-      Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
-  encodeBody trAttrs wrapContent tbodyAttrs colonnade xs
+    H.thead ! theadAttrs $ do
+      Encode.headersMonoidal 
+        (Just (fascia, \attrs theHtml -> H.tr ! attrs $ theHtml))
+        [(\sz c -> wrapContent H.th c ! HA.colspan (H.toValue (show sz)),id)]
+        annCornice
+      -- H.tr ! trAttrs $ do
+      -- Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
+    encodeBody trAttrs wrapContent tbodyAttrs colonnade xs
 
 encodeBody :: (Foldable h, Foldable f)
   => (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
@@ -369,8 +407,8 @@ encodeHeadlessCellTable ::
 encodeHeadlessCellTable = encodeTable
   Nothing mempty (const mempty) htmlFromCell 
 
--- | Encode a table with a header. Table cells cannot have attributes
---   applied to them.
+-- | Encode a table with a header. Table cell element do not have 
+--   any attributes applied to them.
 encodeHeadedHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -380,8 +418,8 @@ encodeHeadedHtmlTable ::
 encodeHeadedHtmlTable = encodeTable
   (Just (mempty,mempty)) mempty (const mempty) ($) 
 
--- | Encode a table without a header. Table cells cannot have attributes
---   applied to them.
+-- | Encode a table without a header. Table cells do not have
+--   any attributes applied to them.
 encodeHeadlessHtmlTable :: 
      Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -391,6 +429,8 @@ encodeHeadlessHtmlTable ::
 encodeHeadlessHtmlTable = encodeTable
   Nothing mempty (const mempty) ($) 
 
+-- | Convert a 'Cell' to 'Html' by wrapping the content with a tag
+-- and applying the 'Cell' attributes to that tag.
 htmlFromCell :: (Html -> Html) -> Cell -> Html
 htmlFromCell f (Cell attr content) = f ! attr $ content
 
@@ -477,7 +517,6 @@ printVeryCompactHtml = putStrLn
   . removeWhitespaceAfterTag "span" 
   . removeWhitespaceAfterTag "em" 
   . removeWhitespaceAfterTag "tr" 
-  . removeWhitespaceAfterTag "thead"
   . Pretty.renderHtml
 
 

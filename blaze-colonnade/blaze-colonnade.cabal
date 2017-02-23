@@ -1,5 +1,5 @@
 name:                blaze-colonnade
-version:             0.1
+version:             1.1.0
 synopsis:            Helper functions for using blaze-html with colonnade
 description:         Blaze HTML and colonnade
 homepage:            https://github.com/andrewthad/colonnade#readme
@@ -18,7 +18,7 @@ library
     Text.Blaze.Colonnade
   build-depends:
       base >= 4.7 && < 5
-    , colonnade >= 1.0 && < 1.1
+    , colonnade >= 1.1 && < 1.2
     , blaze-markup >= 0.7 && < 0.9
     , blaze-html >= 0.8 && < 0.10
     , text >= 1.0 && < 1.3

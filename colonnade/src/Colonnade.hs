@@ -1,5 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 
+{-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors -Werror #-}
+
 -- | Build backend-agnostic columnar encodings that can be 
 --   used to visualize tabular data.
 module Colonnade
@@ -7,8 +9,8 @@ module Colonnade
     -- $setup
     -- * Types
     Colonnade
-  , Headed
-  , Headless
+  , Headed(..)
+  , Headless(..)
     -- * Create
   , headed
   , headless
@@ -30,16 +32,16 @@ module Colonnade
   , recap
     -- * Ascii Table
   , ascii
+  , asciiCapped
   ) where
 
-import Colonnade.Internal
+import Colonnade.Encode (Colonnade,Cornice,
+  Pillar(..),Fascia(..),Headed(..),Headless(..))
 import Data.Foldable
-import Data.Monoid (Endo(..))
 import Control.Monad
-import qualified Colonnade.Encode as Encode
-import qualified Colonnade.Cornice.Encode as CE
 import qualified Data.Bool
 import qualified Data.Maybe
+import qualified Colonnade.Encode as E
 import qualified Data.List as List
 import qualified Data.Vector as Vector
 
@@ -108,13 +110,13 @@ headless = singleton Headless
 
 -- | A single column with any kind of header. This is not typically needed.
 singleton :: h c -> (a -> c) -> Colonnade h a c
-singleton h = Colonnade . Vector.singleton . OneColonnade h
+singleton h = E.Colonnade . Vector.singleton . E.OneColonnade h
 
 -- | Map over the content in the header. This is similar performing 'fmap'
 --   on a 'Colonnade' except that the body content is unaffected.
 mapHeaderContent :: Functor h => (c -> c) -> Colonnade h a c -> Colonnade h a c
-mapHeaderContent f (Colonnade v) = 
-  Colonnade (Vector.map (\(OneColonnade h e) -> OneColonnade (fmap f h) e) v)
+mapHeaderContent f (E.Colonnade v) = 
+  E.Colonnade (Vector.map (\(E.OneColonnade h e) -> E.OneColonnade (fmap f h) e) v)
 
 -- | Lift a column over a 'Maybe'. For example, if some people
 --   have houses and some do not, the data that pairs them together
@@ -149,8 +151,8 @@ mapHeaderContent f (Colonnade v) =
 -- | Sonia  | 12  | Green | $145000 |
 -- +--------+-----+-------+---------+
 fromMaybe :: c -> Colonnade f a c -> Colonnade f (Maybe a) c
-fromMaybe c (Colonnade v) = Colonnade $ flip Vector.map v $
-  \(OneColonnade h encode) -> OneColonnade h (maybe c encode)
+fromMaybe c (E.Colonnade v) = E.Colonnade $ flip Vector.map v $
+  \(E.OneColonnade h encode) -> E.OneColonnade h (maybe c encode)
 
 -- | Convert a collection of @b@ values into a columnar encoding of
 --   the same size. Suppose we decide to show a house\'s color
@@ -178,8 +180,8 @@ columns :: Foldable g
   -> g b -- ^ Basis for column encodings
   -> Colonnade f a c
 columns getCell getHeader = id
-  . Colonnade
-  . Vector.map (\b -> OneColonnade (getHeader b) (getCell b))
+  . E.Colonnade
+  . Vector.map (\b -> E.OneColonnade (getHeader b) (getCell b))
   . Vector.fromList
   . toList
 
@@ -200,9 +202,9 @@ modifyWhen ::
   -> (a -> Bool) -- ^ Row predicate
   -> Colonnade f a c -- ^ Original 'Colonnade'
   -> Colonnade f a c
-modifyWhen changeContent p (Colonnade v) = Colonnade
+modifyWhen changeContent p (E.Colonnade v) = E.Colonnade
   ( Vector.map
-    (\(OneColonnade h encode) -> OneColonnade h $ \a ->
+    (\(E.OneColonnade h encode) -> E.OneColonnade h $ \a ->
       if p a then changeContent (encode a) else encode a
     ) v
   )
@@ -214,9 +216,9 @@ replaceWhen ::
   -> (a -> Bool) -- ^ Row predicate
   -> Colonnade f a c -- ^ Original 'Colonnade'
   -> Colonnade f a c
-replaceWhen newContent p (Colonnade v) = Colonnade
+replaceWhen newContent p (E.Colonnade v) = E.Colonnade
   ( Vector.map
-    (\(OneColonnade h encode) -> OneColonnade h $ \a ->
+    (\(E.OneColonnade h encode) -> E.OneColonnade h $ \a ->
       if p a then newContent else encode a
     ) v
   )
@@ -273,7 +275,7 @@ replaceWhen newContent p (Colonnade v) = Colonnade
 --   +-------+-----+-------+---------+
 --   
 cap :: c -> Colonnade Headed a c -> Cornice (Cap Base) a c
-cap h = CorniceCap . Vector.singleton . OneCornice h . CorniceBase
+cap h = E.CorniceCap . Vector.singleton . E.OneCornice h . E.CorniceBase
 
 -- | Add another cap to a cornice. There is no limit to how many times
 --   this can be applied:
@@ -308,19 +310,19 @@ cap h = CorniceCap . Vector.singleton . OneCornice h . CorniceBase
 --   | Weekend | $9 | $9 | $9 | $7   | $8    | $9 | $9 | $9 | $7   | $8    |
 --   +---------+----+----+----+------+-------+----+----+----+------+-------+
 recap :: c -> Cornice p a c -> Cornice (Cap p) a c
-recap h cor = CorniceCap (Vector.singleton (OneCornice h cor))
+recap h cor = E.CorniceCap (Vector.singleton (E.OneCornice h cor))
 
 asciiCapped :: Foldable f
   => Cornice p a String -- ^ columnar encoding
   -> f a -- ^ rows
   -> String
 asciiCapped cor xs =
-  let annCor = CE.annotateFinely (\x y -> x + y + 3) id 
+  let annCor = E.annotateFinely (\x y -> x + y + 3) id 
         List.length xs cor
-      sizedCol = CE.uncapAnnotated annCor
-   in CE.headersMonoidal
+      sizedCol = E.uncapAnnotated annCor
+   in E.headersMonoidal
         Nothing 
-        [ (\sz c -> hyphens (sz + 2) ++ "+", \s -> "+" ++ s ++ "\n")
+        [ (\sz _ -> hyphens (sz + 2) ++ "+", \s -> "+" ++ s ++ "\n")
         , (\sz c -> " " ++ rightPad sz ' ' c ++ " |", \s -> "|" ++ s ++ "\n")
         ] annCor ++ asciiBody sizedCol xs
       
@@ -335,41 +337,41 @@ ascii :: Foldable f
   -> f a -- ^ rows
   -> String
 ascii col xs = 
-  let sizedCol = Encode.sizeColumns List.length xs col
+  let sizedCol = E.sizeColumns List.length xs col
       divider = concat
         [ "+" 
-        , Encode.headerMonoidalFull sizedCol 
-             (\(Sized sz _) -> hyphens (sz + 2) ++ "+")
+        , E.headerMonoidalFull sizedCol 
+             (\(E.Sized sz _) -> hyphens (sz + 2) ++ "+")
         , "\n"
         ]
    in List.concat
       [ divider
       , concat
          [ "|"
-         , Encode.headerMonoidalFull sizedCol
-             (\(Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
+         , E.headerMonoidalFull sizedCol
+             (\(E.Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
          , "\n"
          ]
       , asciiBody sizedCol xs
       ]
 
 asciiBody :: Foldable f
-  => Colonnade (Sized Headed) a String
+  => Colonnade (E.Sized Headed) a String
   -> f a
   -> String
 asciiBody sizedCol xs =
   let divider = concat
         [ "+" 
-        , Encode.headerMonoidalFull sizedCol 
-             (\(Sized sz _) -> hyphens (sz + 2) ++ "+")
+        , E.headerMonoidalFull sizedCol 
+             (\(E.Sized sz _) -> hyphens (sz + 2) ++ "+")
         , "\n"
         ]
       rowContents = foldMap
         (\x -> concat
            [ "|"
-           , Encode.rowMonoidalHeader 
+           , E.rowMonoidalHeader 
                sizedCol
-               (\(Sized sz _) c -> " " ++ rightPad sz ' ' c ++ " |")
+               (\(E.Sized sz _) c -> " " ++ rightPad sz ' ' c ++ " |")
                x
            , "\n"
            ]
