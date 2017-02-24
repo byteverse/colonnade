@@ -216,12 +216,7 @@ replaceWhen ::
   -> (a -> Bool) -- ^ Row predicate
   -> Colonnade f a c -- ^ Original 'Colonnade'
   -> Colonnade f a c
-replaceWhen newContent p (E.Colonnade v) = E.Colonnade
-  ( Vector.map
-    (\(E.OneColonnade h encode) -> E.OneColonnade h $ \a ->
-      if p a then newContent else encode a
-    ) v
-  )
+replaceWhen = modifyWhen . const
 
 -- | Augment a 'Colonnade' with a header spans over all of the
 --   existing headers. This is best demonstrated by example. 
