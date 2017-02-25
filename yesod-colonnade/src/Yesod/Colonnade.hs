@@ -13,6 +13,7 @@ module Yesod.Colonnade
   , textCell
   , builderCell
   , anchorCell
+  , anchorWidget
     -- * Apply
   , encodeHeadedWidgetTable
   , encodeHeadlessWidgetTable
@@ -68,14 +69,23 @@ textCell = cell . toWidget . toHtml
 builderCell :: TBuilder.Builder -> Cell site
 builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 
--- | Creata a 'Cell' whose content is hyperlinked by wrapping
+-- | Create a 'Cell' whose content is hyperlinked by wrapping
 --   it in an @\<a\>@.
 anchorCell :: 
      (a -> Route site) -- ^ Route that will go in @href@ attribute
   -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
   -> a -- ^ Value
   -> Cell site
-anchorCell getRoute getContent a = cell $ do
+anchorCell getRoute getContent = cell . anchorWidget getRoute getContent
+
+-- | Create a widget whose content is hyperlinked by wrapping
+--   it in an @\<a\>@.
+anchorWidget :: 
+     (a -> Route site) -- ^ Route that will go in @href@ attribute
+  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
+  -> a -- ^ Value
+  -> WidgetT site IO ()
+anchorWidget getRoute getContent a = do
   urlRender <- getUrlRender
   a_ (HA.href (toValue (urlRender (getRoute a)))) (getContent a)
 
