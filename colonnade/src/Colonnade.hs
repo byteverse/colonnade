@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE RankNTypes #-}
 
 {-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors -Werror #-}
 
@@ -16,12 +17,16 @@ module Colonnade
   , headless
   , singleton
     -- * Transform
-  , mapHeaderContent
+    -- ** Body
   , fromMaybe
   , columns
   , bool
   , replaceWhen
   , modifyWhen
+    -- ** Header
+  , mapHeaderContent
+  , mapHeadedness
+  , toHeadless
     -- * Cornice
     -- ** Types
   , Cornice
@@ -117,6 +122,16 @@ singleton h = E.Colonnade . Vector.singleton . E.OneColonnade h
 mapHeaderContent :: Functor h => (c -> c) -> Colonnade h a c -> Colonnade h a c
 mapHeaderContent f (E.Colonnade v) = 
   E.Colonnade (Vector.map (\(E.OneColonnade h e) -> E.OneColonnade (fmap f h) e) v)
+
+-- | Map over the header type of a 'Colonnade'.
+mapHeadedness :: (forall x. h x -> h' x) -> Colonnade h a c -> Colonnade h' a c
+mapHeadedness f (E.Colonnade v) =
+  E.Colonnade (Vector.map (\(E.OneColonnade h e) -> E.OneColonnade (f h) e) v)
+
+-- | Remove the heading from a 'Colonnade'.
+toHeadless :: Colonnade h a c -> Colonnade Headless a c
+toHeadless = mapHeadedness (const Headless)
+  
 
 -- | Lift a column over a 'Maybe'. For example, if some people
 --   have houses and some do not, the data that pairs them together
