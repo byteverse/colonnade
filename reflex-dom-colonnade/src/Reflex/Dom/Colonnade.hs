@@ -1,4 +1,7 @@
+{-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
@@ -8,230 +11,226 @@ module Reflex.Dom.Colonnade
     Cell(..)
   -- * Table Encoders
   , basic
+  , static
+  , eventful
   , dynamic
   , dynamicEventful
-  , expandable
-  , listItems
+  , capped
+  , cappedEventful
     -- * Cell Functions
   , cell
+  , charCell
   , stringCell
   , textCell
+  , lazyTextCell
   , builderCell
   ) where
 
-import Colonnade.Types
-import Control.Monad
-import Data.Maybe
-import Data.Foldable
-import Reflex (Dynamic,Event,switchPromptly,never,leftmost)
-import Reflex.Dynamic (mapDyn)
-import Reflex.Dom (MonadWidget)
-import Reflex.Dom.Widget.Basic
-import Data.Map (Map)
-import Data.Semigroup (Semigroup)
-import Data.Text (Text)
 import Data.String (IsString(..))
-import qualified Data.Vector as Vector
-import qualified Colonnade.Encoding as Encoding
-import qualified Data.Map as Map
-import qualified Data.Text as Text
-import qualified Data.Text.Lazy as LText
-import qualified Data.Text.Lazy.Builder as TBuilder
+import qualified Data.Text as T
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.Builder as LT
+import qualified Data.Map.Strict as M
+import Data.Foldable (Foldable(..),for_)
+import Data.Traversable (for)
+import Data.Semigroup (Semigroup(..))
+import Control.Applicative (liftA2)
+import Control.Monad (void)
+import Reflex.Dom
+import Colonnade (Colonnade,Headed,Fascia,Cornice)
+import qualified Colonnade.Encode as E
+
+data Cell t m b = Cell
+  { cellAttrs    :: !(Dynamic t (M.Map T.Text T.Text))
+  , cellContents :: !(m b)
+  } deriving (Functor)
+
+elFromCell :: (DomBuilder t m, PostBuild t m) => T.Text -> Cell t m b -> m b
+elFromCell e (Cell attr m) = elDynAttr e attr m
 
 -- | Convenience function for creating a 'Cell' representing
 --   a @td@ or @th@ with no attributes.
-cell :: m b -> Cell m b
-cell = Cell Map.empty
+cell :: Reflex t => m b -> Cell t m b
+cell = Cell (pure M.empty)
 
-stringCell :: MonadWidget t m => String -> Cell m ()
-stringCell = cell . text
+charCell :: DomBuilder t m => Char -> Cell t m ()
+charCell = textCell . T.singleton
 
-textCell :: MonadWidget t m => Text -> Cell m ()
-textCell = cell . text . Text.unpack
+stringCell :: DomBuilder t m => String -> Cell t m ()
+stringCell = cell . text . T.pack
 
-builderCell :: MonadWidget t m => TBuilder.Builder -> Cell m ()
-builderCell = textCell . LText.toStrict . TBuilder.toLazyText
+textCell :: DomBuilder t m => T.Text -> Cell t m ()
+textCell = cell . text
 
--- data NewCell b = NewCell
---   { newCellAttrs :: !(Map String String)
---   , newCellContents :: !b
---   } deriving (Functor)
+lazyTextCell :: DomBuilder t m => LT.Text -> Cell t m ()
+lazyTextCell = textCell . LT.toStrict
 
-data Cell m b = Cell
-  { cellAttrs :: !(Map String String)
-  , cellContents :: !(m b)
-  } deriving (Functor)
+builderCell :: DomBuilder t m => LT.Builder -> Cell t m ()
+builderCell = textCell . LT.toStrict . LT.toLazyText
 
 -- | This instance is requires @UndecidableInstances@ and is kind of
 --   bad, but @reflex@ already abusing type classes so much that it
 --   doesn\'t seem too terrible to add this to the mix.
-instance (MonadWidget t m, a ~ ()) => IsString (Cell m a) where
+instance (DomBuilder t m, a ~ ()) => IsString (Cell t m a) where
   fromString = stringCell
 
--- | This determines the attributes that are added
---   to the individual @li@s by concatenating the header\'s
---   attributes with the data\'s attributes.
-listItems :: (Foldable f, MonadWidget t m)
-  => (m () -> m ())
-     -- ^ Wrapper for items, often @ul@
-  -> (m () -> m () -> m ())
-     -- ^ Combines header with data
-  -> Encoding Headed (Cell m ()) a
-     -- ^ How to encode data as a row
+newtype WrappedApplicative m a = WrappedApplicative
+  { unWrappedApplicative :: m a }
+  deriving (Functor,Applicative,Monad)
+
+instance (Semigroup a, Applicative m) => Semigroup (WrappedApplicative m a) where
+  (WrappedApplicative m1) <> (WrappedApplicative m2) = WrappedApplicative (liftA2 (<>) m1 m2)
+
+instance (Monoid a, Applicative m) => Monoid (WrappedApplicative m a) where
+  mempty = WrappedApplicative (pure mempty)
+  mappend (WrappedApplicative m1) (WrappedApplicative m2) = WrappedApplicative (liftA2 mappend m1 m2)
+
+basic ::
+  (DomBuilder t m, PostBuild t m, Foldable f)
+  => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
+  -> Colonnade Headed a (Cell t m ()) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m ()
+basic tableAttrs = static tableAttrs Nothing mempty (const mempty)
+
+body :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
+  => M.Map T.Text T.Text
+  -> (a -> M.Map T.Text T.Text)
+  -> Colonnade p a (Cell t m e)
   -> f a
-     -- ^ Rows of data
+  -> m e
+body bodyAttrs trAttrs colonnade collection =
+  elAttr "tbody" bodyAttrs . unWrappedApplicative . flip foldMap collection $ \a ->
+    WrappedApplicative .
+    elAttr "tr" (trAttrs a) .
+    unWrappedApplicative $
+    E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td") a
+
+static ::
+  (DomBuilder t m, PostBuild t m, Foldable f, Foldable h)
+  => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
+  -> Maybe (M.Map T.Text T.Text, M.Map T.Text T.Text)
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Colonnade h a (Cell t m ()) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
   -> m ()
-listItems ulWrap combine enc xs =
-  forM_ xs $ ulWrap . Encoding.runBothMonadic_ enc
-    (\(Cell ha hc) (Cell ba bc) ->
-      -- Consider doing something better than union for
-      -- combining the two maps. For example, what if they
-      -- both have a class.
-      elAttr "li" (Map.union ha ba) (combine hc bc)
-    )
-
--- | A static table
-basic :: (MonadWidget t m, Foldable f)
-      => Map String String -- ^ Table element attributes
-      -> Encoding Headed (Cell m ()) a -- ^ Encoding of a value into cells
-      -> f a -- ^ Values
-      -> m ()
-basic tableAttrs encoding as = do
+static tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
   elAttr "table" tableAttrs $ do
-    theadBuild encoding
-    el "tbody" $ forM_ as $ \a -> do
-      el "tr" $ Encoding.runRowMonadic encoding (elFromCell "td") a
+    for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
+        E.headerMonadicGeneral_ colonnade (elFromCell "th")
+    body bodyAttrs trAttrs colonnade collection
 
--- | Table with cells that can create expanded content
---   between the rows.
-expandable :: (MonadWidget t m, Foldable f)
-  => String -- ^ Table class
-  -> String -- ^ Class of expanded table rows
-  -> f a -- ^ Values
-  -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
-     -- ^ Encoding into cells with events that can fire to create additional content under the row
-  -> m ()
-expandable tableClass tdExtraClass as encoding@(Encoding v) = do
-  let vlen = Vector.length v
-  elAttr "table" (Map.singleton "class" tableClass) $ do
-    -- Discarding this result is technically the wrong thing
-    -- to do, but I cannot imagine why anyone would want to
-    -- drop down content under the heading.
-    _ <- theadBuild_ encoding
-    el "tbody" $ forM_ as $ \a -> do
-      e' <- el "tr" $ do
-        elist <- Encoding.runRowMonadicWith [] (++) encoding (fmap (\a -> [a]) . elFromCell "td") a
-        let e = leftmost elist
-            e' = flip fmap e $ \mwidg -> case mwidg of
-              Nothing -> return ()
-              Just widg -> el "tr" $ do
-                elAttr "td" ( Map.fromList
-                    [ ("class",tdExtraClass)
-                    , ("colspan",show vlen)
-                    ]
-                  ) widg
-        return e'
-      widgetHold (return ()) e'
-
--- TODO: figure out how to write this. It will need to reset
--- the interrow content whenever its corresponding row changes.
---
--- dynamicExpandable :: (MonadWidget t m, Foldable f)
---   => String
---   -> String
---   -> f (Dynamic t a)
---   -> Encoding Headed (Cell m (Event t (Maybe (m ())))) a
---   -> m ()
-
-elFromCell :: MonadWidget t m => String -> Cell m b -> m b
-elFromCell name (Cell attrs contents) = elAttr name attrs contents
-
-theadBuild :: (MonadWidget t m, Monoid b) => Encoding Headed (Cell m b) a -> m b
-theadBuild encoding = el "thead" . el "tr"
-  $ Encoding.runHeaderMonadic encoding (elFromCell "th")
-
-theadBuild_ :: (MonadWidget t m) => Encoding Headed (Cell m b) a -> m ()
-theadBuild_ encoding = el "thead" . el "tr"
-  $ Encoding.runHeaderMonadic_  encoding (elFromCell "th")
-
-dynamic :: (MonadWidget t m, Foldable f)
-        => Map String String -- ^ Table element attributes
-        -> f (Dynamic t a) -- ^ Dynamic values
-        -> Encoding Headed (Cell m ()) a -- ^ Encoding of a value into cells
-        -> m ()
-dynamic tableAttrs as encoding@(Encoding v) = do
-  elAttr "table" tableAttrs $ do
-    b1 <- theadBuild encoding
-    b2 <- el "tbody" $ forM_ as $ \a -> do
-      el "tr" $ forM_ v $ \(OneEncoding _ encode) -> do
-        dynPair <- mapDyn encode a
-        dynAttrs <- mapDyn cellAttrs dynPair
-        dynContent <- mapDyn cellContents dynPair
-        elDynAttr "td" dynAttrs $ dyn dynContent
-    return (mappend b1 b2)
-
-dynamicEventful :: (MonadWidget t m, Foldable f, Semigroup e)
-  => Map String String -- ^ Table element attributes
-  -> f (Dynamic t a) -- ^ Dynamic values
-  -> Encoding Headed (Cell m (Event t e)) a -- ^ Encoding of a value into cells
+eventful ::
+  (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Semigroup e)
+  => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
+  -> Maybe (M.Map T.Text T.Text, M.Map T.Text T.Text)
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Colonnade h a (Cell t m (Event t e)) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
   -> m (Event t e)
-dynamicEventful tableAttrs as encoding@(Encoding v) = do
+eventful tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
   elAttr "table" tableAttrs $ do
-    b1 <- theadBuild encoding
-    b2 <- el "tbody" $ flip foldlMapM as $ \a -> do
-      el "tr" $ flip foldlMapM v $ \(OneEncoding _ encode) -> do
-        dynPair <- mapDyn encode a
-        dynAttrs <- mapDyn cellAttrs dynPair
-        dynContent <- mapDyn cellContents dynPair
-        e <- elDynAttr "td" dynAttrs $ dyn dynContent
-        -- TODO: This might actually be wrong. Revisit this.
-        switchPromptly never e
-    return (mappend b1 b2)
+    eHead <- for mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
+        E.headerMonadicGeneral colonnade (elFromCell "th")
+    eBody <- body bodyAttrs trAttrs colonnade collection
+    return (maybe never id eHead <> eBody)
 
--- foldMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
--- foldMapM f = foldlM (\b a -> fmap (flip mappend b) (f a)) mempty
+dynamicBody :: (DomBuilder t m, PostBuild t m, Foldable f, Semigroup e, Monoid e)
+  => Dynamic t (M.Map T.Text T.Text)
+  -> (a -> M.Map T.Text T.Text)
+  -> Colonnade p a (Cell t m e)
+  -> f (Dynamic t a)
+  -> m (Event t e)
+dynamicBody bodyAttrs trAttrs colonnade collection =
+  elDynAttr "tbody" bodyAttrs . unWrappedApplicative . flip foldMap collection $ \aDyn ->
+    WrappedApplicative .
+    elDynAttr "tr" (fmap trAttrs aDyn) $
+    dyn (fmap (unWrappedApplicative . E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td")) aDyn)
 
-foldlMapM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
-foldlMapM f = foldlM (\b a -> fmap (mappend b) (f a)) mempty
+dynamic ::
+  (DomBuilder t m, PostBuild t m, Foldable f, Foldable h)
+  => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
+  -> Maybe (Dynamic t (M.Map T.Text T.Text), Dynamic t (M.Map T.Text T.Text))
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Colonnade h a (Cell t m ()) -- ^ Data encoding strategy
+  -> f (Dynamic t a) -- ^ Collection of data
+  -> m ()
+dynamic tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
+  elDynAttr "table" tableAttrs $ do
+    for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      elDynAttr "thead" headAttrs . elDynAttr "tr" headTrAttrs $
+        E.headerMonadicGeneral_ colonnade (elFromCell "th")
+    void (dynamicBody bodyAttrs trAttrs colonnade collection)
 
-foldAlternativeM :: (Foldable t, Monoid b, Monad m) => (a -> m b) -> t a -> m b
-foldAlternativeM f = foldrM (\a b -> fmap (flip mappend b) (f a)) mempty
+dynamicEventful ::
+  (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Foldable h, Semigroup e)
+  => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
+  -> Maybe (Dynamic t (M.Map T.Text T.Text), Dynamic t (M.Map T.Text T.Text))
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Colonnade h a (Cell t m (Event t e)) -- ^ Data encoding strategy
+  -> f (Dynamic t a) -- ^ Collection of data
+  -> m (Event t e)
+dynamicEventful tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
+  elDynAttr "table" tableAttrs $ do
+    eHead <- for mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      elDynAttr "thead" headAttrs . elDynAttr "tr" headTrAttrs $
+        E.headerMonadicGeneral colonnade (elFromCell "th")
+    eeBody <- dynamicBody bodyAttrs trAttrs colonnade collection
+    eBody  <- hold never eeBody
+    return (maybe never id eHead <> switch eBody)
 
--- dynamicEventfulWith :: (MonadWidget t m, Foldable f, Semigroup e, Monoid b)
---   => (e -> b)
---   -> Map String String -- ^ Table element attributes
---   -> f (Dynamic t a) -- ^ Dynamic values
---   -> Encoding Headed (Cell m (Event t e)) a -- ^ Encoding of a value into cells
---   -> m (Event t e)
--- dynamicEventfulWith f tableAttrs as encoding@(Encoding v) = do
---   elAttr "table" tableAttrs $ do
---     b1 <- theadBuild encoding
---     b2 <- el "tbody" $ flip foldMapM as $ \a -> do
---       el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
---         dynPair <- mapDyn encode a
---         dynAttrs <- mapDyn cellAttrs dynPair
---         dynContent <- mapDyn cellContents dynPair
---         e <- elDynAttr "td" dynAttrs $ dyn dynContent
---         flattenedEvent <- switchPromptly never e
---         return (f flattenedEvent)
---     return (mappend b1 b2)
---
--- dynamicEventfulMany :: (MonadWidget t m, Foldable f, Alternative g)
---   => Map String String -- ^ Table element attributes
---   -> f (Dynamic t a) -- ^ Dynamic values
---   -> Encoding Headed (NewCell (g (Compose m (Event t)))) a -- ^ Encoding of a value into cells
---   -> m (g (Event t e))
--- dynamicEventfulMany tableAttrs as encoding@(Encoding v) = do
---   elAttr "table" tableAttrs $ do
---     -- b1 <- theadBuild encoding
---     b2 <- el "tbody" $ flip foldMapM as $ \a -> do
---       el "tr" $ flip foldMapM v $ \(OneEncoding _ encode) -> do
---         dynPair <- mapDyn encode a
---         dynAttrs <- mapDyn cellAttrs dynPair
---         dynContent <- mapDyn cellContents dynPair
---         e <- elDynAttr "td" dynAttrs $ dyn dynContent
---         switchPromptly never e
---     return (mappend b1 b2)
+encodeCorniceHead ::
+  (DomBuilder t m, PostBuild t m, Monoid e)
+  => Dynamic t (M.Map T.Text T.Text)
+  -> Fascia p (Dynamic t (M.Map T.Text T.Text))
+  -> E.AnnotatedCornice p a (Cell t m e)
+  -> m e
+encodeCorniceHead headAttrs fascia annCornice =
+  elDynAttr "thead" headAttrs (unWrappedApplicative thead)
+  where thead = E.headersMonoidal (Just (fascia, addAttr)) [(th,id)] annCornice
+        th size (Cell attrs contents) = WrappedApplicative (elDynAttr "th" (fmap addColspan attrs) contents)
+          where addColspan = M.insert "colspan" (T.pack (show size))
+        addAttr attrs = WrappedApplicative . elDynAttr "tr" attrs . unWrappedApplicative
 
--- data Update f = UpdateName (f Text) | UpdateAge (f Int) | ...
+capped ::
+  (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f)
+  => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<thead\>@ tag attributes
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (Dynamic t (M.Map T.Text T.Text)) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice p a (Cell t m ()) -- ^ Data encoding strategy
+  -> f (Dynamic t a) -- ^ Collection of data
+  -> m ()
+capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
+  elDynAttr "table" tableAttrs $ do
+    encodeCorniceHead headAttrs fascia (E.annotate cornice)
+    void (dynamicBody bodyAttrs trAttrs (E.discard cornice) collection)
 
+cappedEventful ::
+  forall t m f e p a.
+  (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Semigroup e)
+  => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<thead\>@ tag attributes
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (Dynamic t (M.Map T.Text T.Text)) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice p a (Cell t m (Event t e)) -- ^ Data encoding strategy
+  -> f (Dynamic t a) -- ^ Collection of data
+  -> m (Event t e)
+cappedEventful tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
+  elDynAttr "table" tableAttrs $ do
+    eHead  <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
+    eeBody <- dynamicBody bodyAttrs trAttrs (E.discard cornice) collection
+    eBody  <- hold never eeBody
+    return (eHead <> switch eBody)
