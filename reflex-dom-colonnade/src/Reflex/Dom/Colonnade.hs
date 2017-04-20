@@ -13,6 +13,7 @@ module Reflex.Dom.Colonnade
   , basic
   , static
   , capped
+  , cappedTraversing
   , dynamic
   , dynamicCapped
     -- * Cell Functions
@@ -30,6 +31,7 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as LT
 import qualified Data.Map.Strict as M
 import Data.Foldable (Foldable(..),for_)
+import Data.Traversable (for)
 import Data.Semigroup (Semigroup(..))
 import Control.Applicative (liftA2)
 import Reflex.Dom
@@ -147,6 +149,34 @@ capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
     h <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
     b <- body bodyAttrs trAttrs (E.discard cornice) collection
     return (h `mappend` b)
+
+bodyTraversing :: (DomBuilder t m, PostBuild t m, Traversable f, Monoid e)
+  => M.Map T.Text T.Text
+  -> (a -> M.Map T.Text T.Text)
+  -> Colonnade p a (Cell t m e)
+  -> f a
+  -> m (f e)
+bodyTraversing bodyAttrs trAttrs colonnade collection =
+  elAttr "tbody" bodyAttrs . for collection $ \a ->
+    elAttr "tr" (trAttrs a) .
+    unWrappedApplicative $
+    E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td") a
+
+cappedTraversing ::
+  (DomBuilder t m, PostBuild t m, MonadHold t m, Traversable f, Monoid e)
+  => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
+  -> M.Map T.Text T.Text -- ^ @\<thead\>@ tag attributes
+  -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (M.Map T.Text T.Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice p a (Cell t m e) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m (f e)
+cappedTraversing tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
+  elAttr "table" tableAttrs $ do
+    _ <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
+    b <- bodyTraversing bodyAttrs trAttrs (E.discard cornice) collection
+    return b
 
 dynamicBody :: (DomBuilder t m, PostBuild t m, Foldable f, Semigroup e, Monoid e)
   => Dynamic t (M.Map T.Text T.Text)
