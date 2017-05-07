@@ -5,6 +5,8 @@
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
 
+{-# OPTIONS_GHC -Wall -Werror #-}
+
 module Reflex.Dom.Colonnade
   (
   -- * Types
@@ -16,6 +18,7 @@ module Reflex.Dom.Colonnade
   , cappedTraversing
   , dynamic
   , dynamicCapped
+  , expandable
     -- * Cell Functions
   , cell
   , charCell
@@ -30,7 +33,8 @@ import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as LT
 import qualified Data.Map.Strict as M
-import Data.Foldable (Foldable(..),for_)
+import qualified Data.Vector as V
+import Data.Foldable (Foldable(..),for_,forM_)
 import Data.Traversable (for)
 import Data.Semigroup (Semigroup(..))
 import Control.Applicative (liftA2)
@@ -89,7 +93,7 @@ basic ::
   -> Colonnade Headed a (Cell t m ()) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
   -> m ()
-basic tableAttrs = static tableAttrs Nothing mempty (const mempty)
+basic tableAttrs = static tableAttrs (Just (M.empty,M.empty)) mempty (const mempty)
 
 body :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
   => M.Map T.Text T.Text
@@ -237,3 +241,31 @@ dynamicCapped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
     -- TODO: Figure out what this ignored argument represents and dont ignore it
     _ <- encodeCorniceHeadDynamic headAttrs fascia (E.annotate cornice)
     dynamicBody bodyAttrs trAttrs (E.discard cornice) collection
+
+-- | Table with cells that can create expanded content
+--   between the rows.
+expandable :: (MonadWidget t m, Foldable f)
+  => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
+  -> Dynamic t (M.Map T.Text T.Text) -- ^ Attributes of expanded @\<td\>@
+  -> f a -- ^ Values
+  -> Colonnade Headed a (Cell t m (Event t (Maybe (m ()))))
+     -- ^ Encoding into cells with events that can fire to create additional content under the row
+  -> m ()
+expandable tableAttrs tdExpandedAttrs as encoding@(E.Colonnade v) = do
+  let vlen = V.length v
+  elDynAttr "table" tableAttrs $ do
+    -- Discarding this result is technically the wrong thing
+    -- to do, but I cannot imagine why anyone would want to
+    -- drop down content under the heading.
+    _ <- el "thead" $ el "tr" $ E.headerMonadicGeneral_ encoding (elFromCell "th")
+    el "tbody" $ forM_ as $ \a -> do
+      e' <- el "tr" $ do
+        elist <- E.rowMonadicWith [] (++) encoding (fmap (\k -> [k]) . elFromCell "td") a
+        let e = leftmost elist
+            e' = flip fmap e $ \mwidg -> case mwidg of
+              Nothing -> return ()
+              Just widg -> el "tr" $ do
+                elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> tdExpandedAttrs) widg
+        return e'
+      widgetHold (return ()) e'
+

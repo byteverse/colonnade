@@ -5,8 +5,6 @@ cabal.config
 cabal.sandbox.config
 *.chi
 *.chs.h
-config/client_session_key.aes
-playground/
 dist*
 .DS_Store
 *.dyn_hi
@@ -19,23 +17,13 @@ dist*
 *.o
 *.prof
 *.sqlite3
-untracked/
-uploads/
-static/combined/
-static/tmp/
 *.swp
 .virtualenv
 .stack-work/
-yesod-devel/
 tmp/
-config/client_session_key.aes
-playground/auth.txt
 **/*.dump-hi
 tags
 TAGS
+colonnade/ex1.hs
 
-docs/db/unthreat
-ex1.hs
-
-geolite-csv/data/large
-geolite-lmdb/data/large
+reflex-dom-colonnade/result
