@@ -19,6 +19,7 @@ module Reflex.Dom.Colonnade
   , dynamic
   , dynamicCapped
   , expandable
+  , sectioned
     -- * Cell Functions
   , cell
   , charCell
@@ -102,7 +103,15 @@ body :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
   -> f a
   -> m e
 body bodyAttrs trAttrs colonnade collection =
-  elAttr "tbody" bodyAttrs . unWrappedApplicative . flip foldMap collection $ \a ->
+  elAttr "tbody" bodyAttrs (bodyRows trAttrs colonnade collection)
+
+bodyRows :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
+  => (a -> M.Map T.Text T.Text)
+  -> Colonnade p a (Cell t m e)
+  -> f a
+  -> m e
+bodyRows trAttrs colonnade collection =
+  unWrappedApplicative . flip foldMap collection $ \a ->
     WrappedApplicative .
     elAttr "tr" (trAttrs a) .
     unWrappedApplicative $
@@ -124,6 +133,30 @@ static tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
       elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
         E.headerMonadicGeneral_ colonnade (elFromCell "th")
     body bodyAttrs trAttrs colonnade collection
+
+sectioned :: 
+  (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Foldable g)
+  => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
+  -> Maybe (M.Map T.Text T.Text, M.Map T.Text T.Text)
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes for data rows
+  -> (b -> Cell t m ()) -- ^ Section divider encoding strategy
+  -> Colonnade h a (Cell t m ()) -- ^ Data encoding strategy
+  -> f (b, g a) -- ^ Collection of data
+  -> m ()
+sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Colonnade v) collection = do
+  let vlen = V.length v
+  elAttr "tbody" bodyAttrs $ do
+    elAttr "table" tableAttrs $ do
+      for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+        elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
+          E.headerMonadicGeneral_ colonnade (elFromCell "th")
+      elAttr "tbody" bodyAttrs $ forM_ collection $ \(b,as) -> do
+        let Cell attrsB contentsB = dividerContent b
+        elAttr "tr" M.empty $ do
+          elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> attrsB) contentsB
+        bodyRows trAttrs colonnade as
 
 encodeCorniceHead ::
   (DomBuilder t m, PostBuild t m, Monoid e)
