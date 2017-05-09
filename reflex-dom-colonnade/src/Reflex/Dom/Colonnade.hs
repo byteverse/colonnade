@@ -134,6 +134,8 @@ static tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
         E.headerMonadicGeneral_ colonnade (elFromCell "th")
     body bodyAttrs trAttrs colonnade collection
 
+-- | A table dividing into sections by @\<td\>@ elements that
+--   take up entire rows.
 sectioned :: 
   (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Foldable g)
   => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
@@ -147,16 +149,15 @@ sectioned ::
   -> m ()
 sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Colonnade v) collection = do
   let vlen = V.length v
-  elAttr "tbody" bodyAttrs $ do
-    elAttr "table" tableAttrs $ do
-      for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
-        elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
-          E.headerMonadicGeneral_ colonnade (elFromCell "th")
-      elAttr "tbody" bodyAttrs $ forM_ collection $ \(b,as) -> do
-        let Cell attrsB contentsB = dividerContent b
-        elAttr "tr" M.empty $ do
-          elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> attrsB) contentsB
-        bodyRows trAttrs colonnade as
+  elAttr "table" tableAttrs $ do
+    for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
+        E.headerMonadicGeneral_ colonnade (elFromCell "th")
+    elAttr "tbody" bodyAttrs $ forM_ collection $ \(b,as) -> do
+      let Cell attrsB contentsB = dividerContent b
+      elAttr "tr" M.empty $ do
+        elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> attrsB) contentsB
+      bodyRows trAttrs colonnade as
 
 encodeCorniceHead ::
   (DomBuilder t m, PostBuild t m, Monoid e)
