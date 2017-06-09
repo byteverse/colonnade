@@ -1,29 +1,22 @@
-name:                siphon
-version:             0.6
-synopsis:            Encode and decode CSV files
-description:         Please see README.md
-homepage:            https://github.com/andrewthad/colonnade#readme
-license:             BSD3
-license-file:        LICENSE
-author:              Andrew Martin
-maintainer:          andrew.thaddeus@gmail.com
-copyright:           2016 Andrew Martin
-category:            web
-build-type:          Simple
-cabal-version:       >=1.10
+name: siphon
+version: 0.7
+synopsis: Encode and decode CSV files
+description: Please see README.md
+homepage: https://github.com/andrewthad/colonnade#readme
+license: BSD3
+license-file: LICENSE
+author: Andrew Martin
+maintainer: andrew.thaddeus@gmail.com
+copyright: 2016 Andrew Martin
+category: web
+build-type: Simple
+cabal-version: >=1.10
 
 library
   hs-source-dirs:      src
   exposed-modules:
-    Siphon.Text
-    Siphon.ByteString.Char8
     Siphon
     Siphon.Types
-    Siphon.Content
-    Siphon.Encoding
-    Siphon.Decoding
-    Siphon.Internal
-    Siphon.Internal.Text
   build-depends:
       base >= 4.7 && < 5
     , colonnade >= 1.1 && < 1.2
@@ -31,8 +24,9 @@ library
     , bytestring
     , contravariant
     , vector
-    , pipes
+    , streaming
     , attoparsec
+    , transformers
   default-language:    Haskell2010
 
 test-suite siphon-test

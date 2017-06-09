@@ -25,5 +25,6 @@ tmp/
 tags
 TAGS
 colonnade/ex1.hs
+colonnade/result
 
 reflex-dom-colonnade/result
