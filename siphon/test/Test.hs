@@ -1,16 +1,18 @@
+{-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE OverloadedStrings #-}
 {-# LANGUAGE DeriveGeneric     #-}
 
 module Main (main) where
 
-import Test.QuickCheck                      (Gen, Arbitrary(..), choose, elements)
-import Test.HUnit                           (Assertion,(@?=))
-import Test.Framework                       (defaultMain, testGroup, Test)
+import Test.QuickCheck (Gen, Arbitrary(..), choose, elements, Property)
+import Test.QuickCheck.Property (Result, succeeded, exception)
+import Test.HUnit (Assertion,(@?=))
+import Test.Framework (defaultMain, testGroup, Test)
 import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.Framework.Providers.HUnit       (testCase)
-import Data.ByteString                      (ByteString)
-import Data.Text                            (Text)
-import GHC.Generics                         (Generic)
+import Test.Framework.Providers.HUnit (testCase)
+import Data.ByteString (ByteString)
+import Data.Text (Text)
+import GHC.Generics (Generic)
 import Data.Either.Combinators
 import Siphon.Types
 import Data.Functor.Identity
@@ -18,20 +20,20 @@ import Data.Functor.Contravariant           (contramap)
 import Data.Functor.Contravariant.Divisible (divided,conquered)
 import Colonnade (headed,headless,Colonnade,Headed,Headless)
 import Data.Profunctor (lmap)
+import Streaming (Stream,Of(..))
+import Control.Exception
+import Debug.Trace
 import qualified Data.Text                  as Text
 import qualified Data.ByteString.Builder    as Builder
 import qualified Data.ByteString.Lazy       as LByteString
 import qualified Data.ByteString            as ByteString
 import qualified Data.ByteString.Char8      as BC8
 import qualified Colonnade                  as Colonnade
-import qualified Siphon.Encoding            as SE
-import qualified Siphon.Decoding            as SD
-import qualified Siphon.Content             as SC
-import qualified Pipes.Prelude              as Pipes
+import qualified Siphon as S
+import qualified Streaming.Prelude as SMP
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
 import qualified Data.Text.Lazy.Builder.Int as TBuilder
-import Pipes
 
 main :: IO ()
 main = defaultMain tests
@@ -39,60 +41,55 @@ main = defaultMain tests
 tests :: [Test]
 tests =
   [ testGroup "ByteString encode/decode"
-    [ testCase "Headless Encoding (int,char,bool)"
-        $ runTestScenario
-            SC.byteStringChar8
-            SE.pipe
-            encodingA
-            "4,c,false\n"
-    , testProperty "Headless Isomorphism (int,char,bool)"
-        $ propIsoPipe $
-          (SE.pipe SC.byteStringChar8 encodingA)
-          >->
-          (void $ SD.headlessPipe SC.byteStringChar8 decodingA)
-    , testCase "Headed Encoding (int,char,bool)"
-        $ runTestScenario
-            SC.byteStringChar8
-            SE.headedPipe
+    [ testCase "Headed Encoding (int,char,bool)"
+        $ runTestScenario [(4,'c',False)]
+            S.encodeHeadedUtf8Csv
             encodingB
             $ ByteString.concat
               [ "number,letter,boolean\n"
               , "4,c,false\n"
               ]
     , testCase "Headed Encoding (int,char,bool) monoidal building"
-        $ runTestScenario
-            SC.byteStringChar8
-            SE.headedPipe
+        $ runTestScenario [(4,'c',False)]
+            S.encodeHeadedUtf8Csv
             encodingC
             $ ByteString.concat
               [ "boolean,letter\n"
               , "false,c\n"
               ]
+    , testCase "Headed Encoding (escaped characters)"
+        $ runTestScenario ["bob","there,be,commas","the \" quote"]
+            S.encodeHeadedUtf8Csv
+            encodingF
+            $ ByteString.concat
+              [ "name\n"
+              , "bob\n"
+              , "\"there,be,commas\"\n"
+              , "\"the \"\" quote\"\n"
+              ]
+    , testCase "Headed Decoding (int,char,bool)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeHeadedUtf8Csv decodingB
+              ( mapM_ (SMP.yield . BC8.singleton) $ concat
+                [ "number,letter,boolean\n"
+                , "244,z,true\n"
+                ]
+              )
+            ) @?= ([(244,'z',True)] :> Nothing)
+    , testCase "Headed Decoding (escaped characters)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeHeadedUtf8Csv decodingF
+              ( mapM_ (SMP.yield . BC8.singleton) $ concat
+                [ "name\n"
+                , "drew\n"
+                , "\"martin, drew\"\n"
+                ]
+              )
+            ) @?= (["drew","martin, drew"] :> Nothing)
     , testProperty "Headed Isomorphism (int,char,bool)"
-        $ propIsoPipe $
-          (SE.headedPipe SC.byteStringChar8 encodingB)
-          >->
-          (void $ SD.headedPipe SC.byteStringChar8 decodingB)
-    ]
-  , testGroup "Text encode/decode"
-    [ testCase "Headless Encoding (int,char,bool)"
-        $ runTestScenario
-            SC.text
-            SE.pipe
-            encodingW
-            "4,c,false\n"
-    , testCase "Headless Encoding (Foo,Foo,Foo)"
-        $ runCustomTestScenario
-            SC.text
-            SE.pipe
-            encodingY
-            (FooA,FooA,FooC)
-            "Simple,Simple,\"More\"\"Escaped,\"\"\"\"Chars\"\n"
-    , testProperty "Headless Isomorphism (Foo,Foo,Foo)"
-        $ propIsoPipe $
-          (SE.pipe SC.text encodingY)
-          >->
-          (void $ SD.headlessPipe SC.text decodingY)
+        $ propIsoStream BC8.unpack
+          (S.decodeHeadedUtf8Csv decodingB)
+          (S.encodeHeadedUtf8Csv encodingB)
     ]
   ]
 
@@ -111,27 +108,31 @@ fooToString x = case x of
 encodeFoo :: (String -> c) -> Foo -> c
 encodeFoo f = f . fooToString
 
-fooFromString :: String -> Either String Foo
+fooFromString :: String -> Maybe Foo
 fooFromString x = case x of
-  "Simple" -> Right FooA
-  "With,Escaped\nChars" -> Right FooB
-  "More\"Escaped,\"\"Chars" -> Right FooC
-  _ -> Left "failed to decode Foo"
+  "Simple" -> Just FooA
+  "With,Escaped\nChars" -> Just FooB
+  "More\"Escaped,\"\"Chars" -> Just FooC
+  _ -> Nothing
 
-decodeFoo :: (c -> String) -> c -> Either String Foo
+decodeFoo :: (c -> String) -> c -> Maybe Foo
 decodeFoo f = fooFromString . f
 
-decodingA :: Decolonnade Headless ByteString (Int,Char,Bool)
+decodingA :: Siphon Headless ByteString (Int,Char,Bool)
 decodingA = (,,)
-  <$> SD.headless dbInt
-  <*> SD.headless dbChar
-  <*> SD.headless dbBool
+  <$> S.headless dbInt
+  <*> S.headless dbChar
+  <*> S.headless dbBool
 
-decodingB :: Decolonnade Headed ByteString (Int,Char,Bool)
+decodingB :: Siphon Headed ByteString (Int,Char,Bool)
 decodingB = (,,)
-  <$> SD.headed "number" dbInt
-  <*> SD.headed "letter" dbChar
-  <*> SD.headed "boolean" dbBool
+  <$> S.headed "number" dbInt
+  <*> S.headed "letter" dbChar
+  <*> S.headed "boolean" dbBool
+
+decodingF :: Siphon Headed ByteString ByteString
+decodingF = S.headed "name" Just
+
 
 encodingA :: Colonnade Headless (Int,Char,Bool) ByteString
 encodingA = mconcat
@@ -154,11 +155,14 @@ encodingY = mconcat
   , lmap thd3 (headless $ encodeFoo Text.pack)
   ]
 
-decodingY :: Decolonnade Headless Text (Foo,Foo,Foo)
+decodingY :: Siphon Headless Text (Foo,Foo,Foo)
 decodingY = (,,)
-  <$> SD.headless (decodeFoo Text.unpack)
-  <*> SD.headless (decodeFoo Text.unpack)
-  <*> SD.headless (decodeFoo Text.unpack)
+  <$> S.headless (decodeFoo Text.unpack)
+  <*> S.headless (decodeFoo Text.unpack)
+  <*> S.headless (decodeFoo Text.unpack)
+
+encodingF :: Colonnade Headed ByteString ByteString
+encodingF = headed "name" id
 
 encodingB :: Colonnade Headed (Int,Char,Bool) ByteString
 encodingB = mconcat
@@ -176,31 +180,50 @@ encodingC = mconcat
 tripleToPairs :: (a,b,c) -> (a,(b,(c,())))
 tripleToPairs (a,b,c) = (a,(b,(c,())))
 
-propIsoPipe :: Eq a => Pipe a a Identity () -> [a] -> Bool
-propIsoPipe p as = (Pipes.toList $ each as >-> p) == as
+propIsoStream :: (Eq a, Show a, Monoid c)
+  => (c -> String)
+  -> (Stream (Of c) Identity () -> Stream (Of a) Identity (Maybe SiphonError))
+  -> (Stream (Of a) Identity () -> Stream (Of c) Identity ())
+  -> [a]
+  -> Result
+propIsoStream toStr decode encode as =
+  let asNew :> m = runIdentity $ SMP.toList $ decode $ encode $ SMP.each as
+   in case m of
+        Nothing -> if as == asNew
+          then succeeded
+          else exception ("expected " ++ show as ++ " but got " ++ show asNew) myException
+        Just err ->
+          let csv = toStr $ mconcat $ runIdentity $ SMP.toList_ $ encode $ SMP.each as
+           in exception (S.humanizeSiphonError err ++ "\nGenerated CSV\n" ++ csv) myException
 
-runTestScenario :: (Monoid c, Eq c, Show c)
-  => Siphon c
-  -> (Siphon c -> Colonnade f (Int,Char,Bool) c -> Pipe (Int,Char,Bool) c Identity ())
-  -> Colonnade f (Int,Char,Bool) c
-  -> c
-  -> Assertion
-runTestScenario s p e c =
-  ( mconcat $ Pipes.toList $
-    Pipes.yield (4,'c',False) >-> p s e
-  ) @?= c
+data MyException = MyException
+  deriving (Show,Read,Eq)
+instance Exception MyException
 
-runCustomTestScenario :: (Monoid c, Eq c, Show c)
-  => Siphon c
-  -> (Siphon c -> Colonnade f a c -> Pipe a c Identity ())
+myException :: SomeException
+myException = SomeException MyException
+
+runTestScenario :: (Monoid c, Eq c, Show c, Eq a, Show a)
+  => [a]
+  -> (Colonnade f a c -> Stream (Of a) Identity () -> Stream (Of c) Identity ())
   -> Colonnade f a c
-  -> a
   -> c
   -> Assertion
-runCustomTestScenario s p e a c =
-  ( mconcat $ Pipes.toList $
-    Pipes.yield a >-> p s e
+runTestScenario as p e c =
+  ( mconcat (runIdentity (SMP.toList_ (p e (mapM_ SMP.yield as))))
   ) @?= c
+
+-- runCustomTestScenario :: (Monoid c, Eq c, Show c)
+--   => Siphon c
+--   -> (Siphon c -> Colonnade f a c -> Pipe a c Identity ())
+--   -> Colonnade f a c
+--   -> a
+--   -> c
+--   -> Assertion
+-- runCustomTestScenario s p e a c =
+--   ( mconcat $ Pipes.toList $
+--     Pipes.yield a >-> p s e
+--   ) @?= c
 
 -- testEncodingA :: Assertion
 -- testEncodingA = runTestScenario encodingA "4,c,false\n"
@@ -225,24 +248,23 @@ thd3 :: (a,b,c) -> c
 thd3 (a,b,c) = c
 
 
-dbChar :: ByteString -> Either String Char
+dbChar :: ByteString -> Maybe Char
 dbChar b = case BC8.length b of
-  1 -> Right (BC8.head b)
-  0 -> Left "cannot decode Char from empty bytestring"
-  _ -> Left "cannot decode Char from multi-character bytestring"
+  1 -> Just (BC8.head b)
+  _ -> Nothing
 
-dbInt :: ByteString -> Either String Int
+dbInt :: ByteString -> Maybe Int
 dbInt b = do
-  (a,bsRem) <- maybe (Left "could not parse int") Right (BC8.readInt b)
+  (a,bsRem) <- BC8.readInt b
   if ByteString.null bsRem
-    then Right a
-    else Left "found extra characters after int"
+    then Just a
+    else Nothing
 
-dbBool :: ByteString -> Either String Bool
+dbBool :: ByteString -> Maybe Bool
 dbBool b
-  | b == BC8.pack "true" = Right True
-  | b == BC8.pack "false" = Right False
-  | otherwise = Left "must be true or false"
+  | b == BC8.pack "true" = Just True
+  | b == BC8.pack "false" = Just False
+  | otherwise = Nothing
 
 ebChar :: Char -> ByteString
 ebChar = BC8.singleton

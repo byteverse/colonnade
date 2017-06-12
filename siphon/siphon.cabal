@@ -18,11 +18,10 @@ library
     Siphon
     Siphon.Types
   build-depends:
-      base >= 4.7 && < 5
+      base >= 4.9 && < 5
     , colonnade >= 1.1 && < 1.2
     , text
     , bytestring
-    , contravariant
     , vector
     , streaming
     , attoparsec
@@ -30,9 +29,9 @@ library
   default-language:    Haskell2010
 
 test-suite siphon-test
-  type:                exitcode-stdio-1.0
-  hs-source-dirs:      test
-  main-is:             Test.hs
+  type: exitcode-stdio-1.0
+  hs-source-dirs: test
+  main-is: Test.hs
   build-depends:
       base
     , either
@@ -48,9 +47,9 @@ test-suite siphon-test
     , HUnit
     , test-framework-hunit
     , profunctors
-  ghc-options:         -threaded -rtsopts -with-rtsopts=-N
-  default-language:    Haskell2010
+    , streaming
+  default-language: Haskell2010
 
 source-repository head
-  type:     git
+  type: git
   location: https://github.com/andrewthad/colonnade

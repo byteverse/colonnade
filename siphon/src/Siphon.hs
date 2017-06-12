@@ -9,8 +9,12 @@ module Siphon
   ( Siphon
   , SiphonError
   , Indexed(..)
-  , decodeHeadedChar8Csv
+  , decodeHeadedUtf8Csv
+  , encodeHeadedUtf8Csv
   , humanizeSiphonError
+  , headed
+  , headless
+  , indexed
   ) where
 
 import Siphon.Types
@@ -34,6 +38,8 @@ import qualified Streaming as SM
 import qualified Streaming.Prelude as SMP
 import qualified Data.Attoparsec.Types as ATYP
 import qualified Colonnade.Encode as CE
+import qualified Data.Vector.Mutable as MV
+
 
 import Control.Monad.Trans.Class
 import Data.ByteString.Builder (toLazyByteString,byteString)
@@ -43,73 +49,90 @@ import Data.Vector (Vector)
 import Data.ByteString (ByteString)
 import Data.Coerce (coerce)
 import Data.Char (chr)
+import Data.Text.Encoding (decodeUtf8')
 import Streaming (Stream,Of(..))
+import Data.Vector.Mutable (MVector)
+import Control.Monad.ST
 
 newtype Escaped c = Escaped { getEscaped :: c }
 data Ended = EndedYes | EndedNo
+  deriving (Show)
 data CellResult c = CellResultData !c | CellResultNewline !Ended
+  deriving (Show)
 
-decodeHeadedChar8Csv :: Monad m 
+decodeHeadedUtf8Csv :: Monad m 
   => Siphon CE.Headed ByteString a
   -> Stream (Of ByteString) m () -- ^ encoded csv
-  -> Stream (Of a) m (Maybe (SiphonError ByteString))
-decodeHeadedChar8Csv headedSiphon s1 = do
-  e <- lift (consumeHeaderRowChar8 s1)
+  -> Stream (Of a) m (Maybe SiphonError)
+decodeHeadedUtf8Csv headedSiphon s1 = do
+  e <- lift (consumeHeaderRowUtf8 s1)
   case e of
     Left err -> return (Just err)
-    Right (v :> s2) -> case headedToIndexed v headedSiphon of
+    Right (v :> s2) -> case headedToIndexed utf8ToStr v headedSiphon of
       Left err -> return (Just err)
       Right ixedSiphon -> do
         let requiredLength = V.length v
-        consumeBodyChar8 1 requiredLength ixedSiphon s2
+        consumeBodyUtf8 1 requiredLength ixedSiphon s2
 
-encodeHeadedChar8Csv :: Monad m 
-  => Colonnade CE.Headed ByteString a
+encodeHeadedUtf8Csv :: Monad m 
+  => CE.Colonnade CE.Headed a ByteString
   -> Stream (Of a) m r
   -> Stream (Of ByteString) m r
-encodeHeadedChar8Csv headedSiphon s1 = do
-  yield (header siphon encoding)
-  pipe siphon encoding
+encodeHeadedUtf8Csv =
+  encodeHeadedCsv escapeChar8 (B.singleton comma) (B.singleton newline)
 
-encodeGeneralCsv :: Monad m
+encodeHeadedCsv :: Monad m
   => (c -> Escaped c)
   -> c -- ^ separator
-  -> Colonnade f a c
+  -> c -- ^ newline
+  -> CE.Colonnade CE.Headed a c
   -> Stream (Of a) m r
   -> Stream (Of c) m r
-encodeGeneralCsv escapeFunc separatorStr colonnade = do
-  Pipes.map (row siphon encoding)
+encodeHeadedCsv escapeFunc separatorStr newlineStr colonnade s = do
+  encodeHeader escapeFunc separatorStr newlineStr colonnade
+  encodeRows escapeFunc separatorStr newlineStr colonnade s
 
-encodeHeader :: Siphon c -> Colonnade Headed a c -> c
+encodeHeader :: Monad m
   => (c -> Escaped c)
   -> c -- ^ separator
-  -> Colonnade f a c
-  -> Stream (Of c) m r
-encodeHeader escapeFunc separatorStr colonnade = SMP.mapM_ $ \a -> do
+  -> c -- ^ newline
+  -> CE.Colonnade CE.Headed a c
+  -> Stream (Of c) m ()
+encodeHeader escapeFunc separatorStr newlineStr colonnade = do
   let (vs,ws) = V.splitAt 1 (CE.getColonnade colonnade)
   -- we only need to do this split because the first cell
   -- gets treated differently than the others. It does not
   -- get a separator added before it.
-  V.forM_ vs $ \(CE.OneColonnade _ encode) -> yield (getEscaped (escapeFunc (encode a)))
-  V.forM_ ws $ \(CE.OneColonnade _ encode) -> do
-    yield separator
-    yeied (getEscaped (escapeFunc (encode a)))
+  V.forM_ vs $ \(CE.OneColonnade (CE.Headed h) _) -> do
+    SMP.yield (getEscaped (escapeFunc h))
+  V.forM_ ws $ \(CE.OneColonnade (CE.Headed h) _) -> do
+    SMP.yield separatorStr
+    SMP.yield (getEscaped (escapeFunc h))
+  SMP.yield newlineStr
 
-encodeRow :: 
+mapStreamM :: Monad m
+  => (a -> Stream (Of b) m x)
+  -> Stream (Of a) m r
+  -> Stream (Of b) m r
+mapStreamM f = SM.concats . SM.mapsM (\(a :> s) -> return (f a >> return s))
+
+encodeRows :: Monad m
   => (c -> Escaped c)
   -> c -- ^ separator
-  -> Colonnade f a c
+  -> c -- ^ newline
+  -> CE.Colonnade f a c
   -> Stream (Of a) m r
   -> Stream (Of c) m r
-encodeRow escapeFunc separatorStr colonnade = SMP.mapM_ $ \a -> do
+encodeRows escapeFunc separatorStr newlineStr colonnade = mapStreamM $ \a -> do
   let (vs,ws) = V.splitAt 1 (CE.getColonnade colonnade)
   -- we only need to do this split because the first cell
   -- gets treated differently than the others. It does not
   -- get a separator added before it.
-  V.forM_ vs $ \(CE.OneColonnade _ encode) -> yield (getEscaped (escapeFunc (encode a)))
+  V.forM_ vs $ \(CE.OneColonnade _ encode) -> SMP.yield (getEscaped (escapeFunc (encode a)))
   V.forM_ ws $ \(CE.OneColonnade _ encode) -> do
-    yield separator
-    yeied (getEscaped (escapeFunc (encode a)))
+    SMP.yield separatorStr
+    SMP.yield (getEscaped (escapeFunc (encode a)))
+  SMP.yield newlineStr
 
 data IndexedHeader a = IndexedHeader
   { indexedHeaderIndexed :: {-# UNPACK #-} !Int
@@ -120,35 +143,36 @@ data IndexedHeader a = IndexedHeader
 --   expected headers into the indices of the columns that they
 --   correspond to.
 headedToIndexed :: forall c a. Eq c
-  => Vector c -- ^ Headers in the source document
+  => (c -> T.Text)
+  -> Vector c -- ^ Headers in the source document
   -> Siphon CE.Headed c a -- ^ Decolonnade that contains expected headers
-  -> Either (SiphonError c) (Siphon IndexedHeader c a)
-headedToIndexed v =
+  -> Either SiphonError (Siphon IndexedHeader c a)
+headedToIndexed toStr v =
     mapLeft (\(HeaderErrors a b c) -> SiphonError 0 (RowErrorHeaders a b c)) 
   . getEitherWrap
   . go
   where
   go :: forall b.
         Siphon CE.Headed c b
-     -> EitherWrap (HeaderErrors c) (Siphon IndexedHeader c b)
+     -> EitherWrap HeaderErrors (Siphon IndexedHeader c b)
   go (SiphonPure b) = EitherWrap (Right (SiphonPure b))
   go (SiphonAp (CE.Headed h) decode apNext) =
     let rnext = go apNext
         ixs = V.elemIndices h v
         ixsLen = V.length ixs
         rcurrent
-          | ixsLen == 1 = Right (V.unsafeIndex ixs 0)
-          | ixsLen == 0 = Left (HeaderErrors V.empty (V.singleton h) V.empty)
-          | otherwise   =
-              let dups = V.singleton (V.map (\ix -> CellError ix (V.unsafeIndex v ix)) ixs)
+          | ixsLen == 1 = Right (ixs V.! 0) -- (V.unsafeIndex ixs 0)
+          | ixsLen == 0 = Left (HeaderErrors V.empty (V.singleton (toStr h)) V.empty)
+          | otherwise =
+              let dups = V.singleton (V.map (\ix -> CellError ix (toStr (v V.! ix) {- (V.unsafeIndex v ix) -} )) ixs)
                in Left (HeaderErrors dups V.empty V.empty)
     in (\ix nextSiphon -> SiphonAp (IndexedHeader ix h) decode nextSiphon)
        <$> EitherWrap rcurrent
        <*> rnext
 
-data HeaderErrors c = HeaderErrors !(Vector (Vector (CellError c))) !(Vector c) !(Vector Int)
+data HeaderErrors = HeaderErrors !(Vector (Vector CellError)) !(Vector T.Text) !(Vector Int)
 
-instance Monoid (HeaderErrors c) where
+instance Monoid HeaderErrors where
   mempty = HeaderErrors mempty mempty mempty
   mappend (HeaderErrors a1 b1 c1) (HeaderErrors a2 b2 c2) = HeaderErrors
     (mappend a1 a2) (mappend b1 b2) (mappend c1 c2)
@@ -160,15 +184,8 @@ instance Monoid (HeaderErrors c) where
 --   (A.parse (row comma))
 --   B.null
 
-encodeRow :: Vector (Escaped ByteString) -> ByteString
-encodeRow = id
-  . flip B.append (B.singleton newline)
-  . B.intercalate (B.singleton comma)
-  . V.toList
-  . coerce
-
-escape :: ByteString -> Escaped ByteString
-escape t = case B.find (\c -> c == newline || c == cr || c == comma || c == doubleQuote) t of
+escapeChar8 :: ByteString -> Escaped ByteString
+escapeChar8 t = case B.find (\c -> c == newline || c == cr || c == comma || c == doubleQuote) t of
   Nothing -> Escaped t
   Just _  -> escapeAlways t
 
@@ -233,7 +250,7 @@ field !delim = do
   -- choice if we see a double quote.
   case mb of
     Just b
-      | b == delim -> do
+      | b == doubleQuote -> do
           bs <- escapedField delim
           return (CellResultData bs)
       | b == 10 || b == 13 -> do
@@ -260,7 +277,7 @@ escapedField !delim = do
                                           then Just (not s)
                                           else if s then Nothing
                                                else Just False)
-  A.skip (== delim)
+  A.option () (A.skip (== delim))
   if doubleQuote `S.elem` s
       then case Z.parse unescape s of
           Right r  -> return r
@@ -276,7 +293,7 @@ unescapedField !delim =
     c /= newline &&
     c /= delim &&
     c /= cr
-  ) <* A.skip (== delim)
+  ) <* A.option () (A.skip (== delim))
 
 dquote :: AL.Parser Char
 dquote = char '"'
@@ -327,15 +344,15 @@ comma = 44
 
 -- | This adds one to the index because text editors consider
 --   line number to be one-based, not zero-based.
-humanizeSiphonError :: Eq c => (c -> String) -> SiphonError c -> String
-humanizeSiphonError toStr (SiphonError ix e) = unlines
+humanizeSiphonError :: SiphonError -> String
+humanizeSiphonError (SiphonError ix e) = unlines
   $ ("Decolonnade error on line " ++ show (ix + 1) ++ " of file.")
   : ("Error Category: " ++ descr)
   : map ("  " ++) errDescrs
-  where (descr,errDescrs) = prettyRowError toStr e
+  where (descr,errDescrs) = prettyRowError e
 
-prettyRowError :: Eq c => (c -> String) -> RowError c -> (String, [String])
-prettyRowError toStr x = case x of
+prettyRowError :: RowError -> (String, [String])
+prettyRowError x = case x of
   RowErrorParse -> (,) "CSV Parsing"
     [ "The cells were malformed."
     ]
@@ -352,16 +369,16 @@ prettyRowError toStr x = case x of
     , "There is a mistake in the encoding of the text."
     ]
   RowErrorHeaders dupErrs namedErrs unnamedErrs -> (,) "Missing Headers" $ concat
-    [ if V.length namedErrs > 0 then prettyNamedMissingHeaders toStr namedErrs else []
+    [ if V.length namedErrs > 0 then prettyNamedMissingHeaders namedErrs else []
     , if V.length unnamedErrs > 0 then ["Missing unnamed headers"] else []
-    , if V.length dupErrs > 0 then prettyHeadingErrors toStr dupErrs else []
+    , if V.length dupErrs > 0 then prettyHeadingErrors dupErrs else []
     ]
-  RowErrorDecode errs -> (,) "Cell Decolonnade" (prettyCellErrors toStr errs)
+  RowErrorDecode errs -> (,) "Cell Decolonnade" (prettyCellErrors errs)
 
-prettyCellErrors :: (c -> String) -> Vector (CellError c) -> [String]
-prettyCellErrors toStr errs = drop 1 $
+prettyCellErrors :: Vector CellError -> [String]
+prettyCellErrors errs = drop 1 $
   flip concatMap errs $ \(CellError ix content) ->
-    let str = toStr content in
+    let str = T.unpack content in
     [ "-----------"
     , "Column " ++ columnNumToLetters ix
     , "Cell Content Length: " ++ show (Prelude.length str)
@@ -370,27 +387,26 @@ prettyCellErrors toStr errs = drop 1 $
         else str
     ]
 
-prettyNamedMissingHeaders :: (c -> String) -> Vector c -> [String]
-prettyNamedMissingHeaders conv missing = concat
-  [ concatMap (\h -> ["The header " ++ conv h ++ " was missing."]) missing
+prettyNamedMissingHeaders :: Vector T.Text -> [String]
+prettyNamedMissingHeaders missing = concat
+  [ concatMap (\h -> ["The header " ++ T.unpack h ++ " was missing."]) missing
   ]
 
-prettyHeadingErrors :: forall c. Eq c
-  => (c -> String) -> Vector (Vector (CellError c)) -> [String]
-prettyHeadingErrors conv missing = join (V.toList (fmap f missing))
+prettyHeadingErrors :: Vector (Vector CellError) -> [String]
+prettyHeadingErrors missing = join (V.toList (fmap f missing))
   where
-  f :: Vector (CellError c) -> [String]
+  f :: Vector CellError -> [String]
   f v
     | not (V.null w) && V.all (== V.head w) (V.tail w) =
         [ "The header ["
-        , conv (V.head w)
+        , T.unpack (V.head w)
         , "] appears in columns "
         , L.intercalate ", " (V.toList (V.map (\(CellError ix _) -> columnNumToLetters ix) v))
         ]
     | otherwise = multiMsg : V.toList
-        (V.map (\(CellError ix content) -> "  Column " ++ columnNumToLetters ix ++ ": " ++ conv content) v)
+        (V.map (\(CellError ix content) -> "  Column " ++ columnNumToLetters ix ++ ": " ++ T.unpack content) v)
     where
-    w :: Vector c
+    w :: Vector T.Text
     w = V.map cellErrorContent v
     multiMsg :: String
     multiMsg = "Multiple headers matched the same predicate:"
@@ -415,32 +431,37 @@ mapLeft :: (a -> b) -> Either a c -> Either b c
 mapLeft _ (Right a) = Right a
 mapLeft f (Left a) = Left (f a)
 
-consumeHeaderRowChar8 :: Monad m
+consumeHeaderRowUtf8 :: Monad m
   => Stream (Of ByteString) m ()
-  -> m (Either (SiphonError ByteString) (Of (Vector ByteString) (Stream (Of ByteString) m ())))
-consumeHeaderRowChar8 = consumeHeaderRow (A.parse (field comma)) B.null B.empty (\() -> True)
+  -> m (Either SiphonError (Of (Vector ByteString) (Stream (Of ByteString) m ())))
+consumeHeaderRowUtf8 = consumeHeaderRow utf8ToStr (A.parse (field comma)) B.null B.empty (\() -> True)
 
-consumeBodyChar8 :: forall m a. Monad m
+consumeBodyUtf8 :: forall m a. Monad m
   => Int -- ^ index of first row, usually zero or one
   -> Int -- ^ Required row length
   -> Siphon IndexedHeader ByteString a
   -> Stream (Of ByteString) m ()
-  -> Stream (Of a) m (Maybe (SiphonError ByteString))
-consumeBodyChar8 = consumeBody (A.parse (field comma)) B.null B.empty (\() -> True)
+  -> Stream (Of a) m (Maybe SiphonError)
+consumeBodyUtf8 = consumeBody utf8ToStr
+  (A.parse (field comma)) B.null B.empty (\() -> True)
+
+utf8ToStr :: ByteString -> T.Text
+utf8ToStr = either (\_ -> T.empty) id . decodeUtf8'
 
 consumeHeaderRow :: forall m r c. Monad m
-  => (c -> ATYP.IResult c (CellResult c))
+  => (c -> T.Text)
+  -> (c -> ATYP.IResult c (CellResult c))
   -> (c -> Bool) -- ^ true if null string
   -> c
   -> (r -> Bool) -- ^ true if termination is acceptable
   -> Stream (Of c) m r
-  -> m (Either (SiphonError c) (Of (Vector c) (Stream (Of c) m r)))
-consumeHeaderRow parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
+  -> m (Either SiphonError (Of (Vector c) (Stream (Of c) m r)))
+consumeHeaderRow toStr parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
   where
   go :: Int
      -> StrictList c
      -> Stream (Of c) m r
-     -> m (Either (SiphonError c) (Of (Vector c) (Stream (Of c) m r)))
+     -> m (Either SiphonError (Of (Vector c) (Stream (Of c) m r)))
   go !cellsLen !cells !s1 = do
     e <- skipWhile isNull s1
     case e of
@@ -451,7 +472,7 @@ consumeHeaderRow parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
   handleResult :: Int -> StrictList c 
                -> ATYP.IResult c (CellResult c)
                -> Stream (Of c) m r
-               -> m (Either (SiphonError c) (Of (Vector c) (Stream (Of c) m r)))
+               -> m (Either SiphonError (Of (Vector c) (Stream (Of c) m r)))
   handleResult !cellsLen !cells !result s1 = case result of
     ATYP.Fail _ _ _ -> return $ Left $ SiphonError 0 RowErrorParse
     ATYP.Done !c1 !res -> case res of
@@ -469,7 +490,8 @@ consumeHeaderRow parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
         Right (c1 :> s2) -> handleResult cellsLen cells (k c1) s2
 
 consumeBody :: forall m r c a. Monad m
-  => (c -> ATYP.IResult c (CellResult c))
+  => (c -> T.Text)
+  -> (c -> ATYP.IResult c (CellResult c))
   -> (c -> Bool)
   -> c
   -> (r -> Bool) -- ^ True if termination is acceptable. False if it is because of a decoding error.
@@ -477,10 +499,11 @@ consumeBody :: forall m r c a. Monad m
   -> Int -- ^ Required row length
   -> Siphon IndexedHeader c a
   -> Stream (Of c) m r
-  -> Stream (Of a) m (Maybe (SiphonError c))
-consumeBody parseCell isNull emptyStr isGood row0 reqLen siphon s0 = go row0 0 StrictListNil s0
+  -> Stream (Of a) m (Maybe SiphonError)
+consumeBody toStr parseCell isNull emptyStr isGood row0 reqLen siphon s0 =
+  go row0 0 StrictListNil s0
   where
-  go :: Int -> Int -> StrictList c -> Stream (Of c) m r -> Stream (Of a) m (Maybe (SiphonError c))
+  go :: Int -> Int -> StrictList c -> Stream (Of c) m r -> Stream (Of a) m (Maybe SiphonError)
   go !row !cellsLen !cells !s1 = do
     e <- lift (skipWhile isNull s1)
     case e of
@@ -491,11 +514,11 @@ consumeBody parseCell isNull emptyStr isGood row0 reqLen siphon s0 = go row0 0 S
   handleResult :: Int -> Int -> StrictList c 
                -> ATYP.IResult c (CellResult c)
                -> Stream (Of c) m r
-               -> Stream (Of a) m (Maybe (SiphonError c))
+               -> Stream (Of a) m (Maybe SiphonError)
   handleResult !row !cellsLen !cells !result s1 = case result of
     ATYP.Fail _ _ _ -> return $ Just $ SiphonError row RowErrorParse
     ATYP.Done !c1 !res -> case res of
-      CellResultNewline ended -> do
+      CellResultNewline !ended -> do
         case decodeRow row (reverseVectorStrictList cellsLen cells) of
           Left err -> return (Just err)
           Right a -> do
@@ -519,16 +542,30 @@ consumeBody parseCell isNull emptyStr isGood row0 reqLen siphon s0 = go row0 0 S
       case e of
         Left r -> handleResult row cellsLen cells (k emptyStr) (return r)
         Right (c1 :> s2) -> handleResult row cellsLen cells (k c1) s2
-  decodeRow :: Int -> Vector c -> Either (SiphonError c) a
+  decodeRow :: Int -> Vector c -> Either SiphonError a
   decodeRow rowIx v =
     let vlen = V.length v in
     if vlen /= reqLen
       then Left $ SiphonError rowIx $ RowErrorSize reqLen vlen
-      else uncheckedRunWithRow rowIx siphon v
+      else uncheckedRunWithRow toStr rowIx siphon v
 
 -- | You must pass the length of the list and as the first argument.
-reverseVectorStrictList :: Int -> StrictList c -> Vector c
-reverseVectorStrictList _ _ = error "write me"
+--   Passing the wrong length will lead to an error.
+reverseVectorStrictList :: forall c. Int -> StrictList c -> Vector c
+reverseVectorStrictList len sl0 = V.create $ do
+  mv <- MV.new len
+  go1 mv
+  return mv
+  where
+  go1 :: forall s. MVector s c -> ST s ()
+  go1 !mv = go2 0 sl0
+    where
+    go2 :: Int -> StrictList c -> ST s ()
+    go2 _ StrictListNil = return ()
+    go2 !ix (StrictListCons c slNext) = do
+      MV.write mv ix c
+      go2 (ix + 1) slNext
+
 
 skipWhile :: forall m a r. Monad m
   => (a -> Bool)
@@ -551,31 +588,34 @@ data StrictList a = StrictListNil | StrictListCons !a !(StrictList a)
 -- | This function uses 'unsafeIndex' to access
 --   elements of the 'Vector'.
 uncheckedRunWithRow ::
-     Int
+     (c -> T.Text)
+  -> Int
   -> Siphon IndexedHeader c a
   -> Vector c
-  -> Either (SiphonError c) a
-uncheckedRunWithRow i d v = mapLeft (SiphonError i . RowErrorDecode) (uncheckedRun d v)
+  -> Either SiphonError a
+uncheckedRunWithRow toStr i d v =
+  mapLeft (SiphonError i . RowErrorDecode) (uncheckedRun toStr d v)
 
 -- | This function does not check to make sure that the indicies in
 --   the 'Decolonnade' are in the 'Vector'. Only use this if you have
 --   already verified that none of the indices in the siphon are
 --   out of the bounds.
 uncheckedRun :: forall c a.
-     Siphon IndexedHeader c a
+     (c -> T.Text)
+  -> Siphon IndexedHeader c a
   -> Vector c
-  -> Either (Vector (CellError c)) a
-uncheckedRun dc v = getEitherWrap (go dc)
+  -> Either (Vector CellError) a
+uncheckedRun toStr dc v = getEitherWrap (go dc)
   where
   go :: forall b.
         Siphon IndexedHeader c b
-     -> EitherWrap (Vector (CellError c)) b
+     -> EitherWrap (Vector CellError) b
   go (SiphonPure b) = EitherWrap (Right b)
   go (SiphonAp (IndexedHeader ix _) decode apNext) =
     let rnext = go apNext
-        content = V.unsafeIndex v ix
+        content = v V.! ix -- V.unsafeIndex v ix
         rcurrent = maybe
-          (Left (V.singleton (CellError ix content)))
+          (Left (V.singleton (CellError ix (toStr content))))
           Right
           (decode content)
     in rnext <*> (EitherWrap rcurrent)
@@ -592,4 +632,13 @@ maxIndex = go 0 where
   go !ix (SiphonPure _) = ix
   go !ix1 (SiphonAp (IndexedHeader ix2 _) _ apNext) =
     go (max ix1 ix2) apNext
+
+headless :: (c -> Maybe a) -> Siphon CE.Headless c a
+headless f = SiphonAp CE.Headless f (SiphonPure id)
+
+headed :: c -> (c -> Maybe a) -> Siphon CE.Headed c a
+headed h f = SiphonAp (CE.Headed h) f (SiphonPure id)
+
+indexed :: Int -> (c -> Maybe a) -> Siphon Indexed c a
+indexed ix f = SiphonAp (Indexed ix) f (SiphonPure id)
 

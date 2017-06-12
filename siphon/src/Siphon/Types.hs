@@ -14,32 +14,32 @@ module Siphon.Types
 
 import Data.Vector (Vector)
 import Control.Exception (Exception)
-import Data.Typeable (Typeable)
+import Data.Text (Text)
 
-data CellError c = CellError
+data CellError = CellError
   { cellErrorColumn :: !Int
-  , cellErrorContent :: !c
+  , cellErrorContent :: !Text
   } deriving (Show,Read,Eq)
 
 newtype Indexed a = Indexed
   { indexedIndex :: Int
   } deriving (Eq,Ord,Functor,Show,Read)
 
-data SiphonError c = SiphonError
+data SiphonError = SiphonError
   { siphonErrorRow :: !Int
-  , siphonErrorCause :: !(RowError c)
+  , siphonErrorCause :: !RowError
   } deriving (Show,Read,Eq)
 
-instance (Show c, Typeable c) => Exception (SiphonError c)
+instance Exception SiphonError
 
-data RowError c
+data RowError
   = RowErrorParse
     -- ^ Error occurred parsing the document into cells
-  | RowErrorDecode !(Vector (CellError c))
+  | RowErrorDecode !(Vector CellError)
     -- ^ Error decoding the content
   | RowErrorSize !Int !Int
     -- ^ Wrong number of cells in the row
-  | RowErrorHeaders !(Vector (Vector (CellError c))) !(Vector c) !(Vector Int)
+  | RowErrorHeaders !(Vector (Vector CellError)) !(Vector Text) !(Vector Int)
     -- ^ Three parts:
     --   (a) Multiple header cells matched the same expected cell, 
     --   (b) Headers that were missing, 

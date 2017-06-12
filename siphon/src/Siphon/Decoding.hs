@@ -11,9 +11,6 @@ module Siphon.Decoding
   , consumeGeneral
   , pipeGeneral
   , convertDecodeError
-  , headed
-  , headless
-  , indexed
   ) where
 
 import Siphon.Types
