@@ -57,7 +57,7 @@ import Control.Monad.ST
 newtype Escaped c = Escaped { getEscaped :: c }
 data Ended = EndedYes | EndedNo
   deriving (Show)
-data CellResult c = CellResultData !c | CellResultNewline !Ended
+data CellResult c = CellResultData !c | CellResultNewline !c !Ended
   deriving (Show)
 
 decodeHeadedUtf8Csv :: Monad m 
@@ -257,12 +257,15 @@ field !delim = do
           _ <- eatNewlines
           isEnd <- A.atEnd
           if isEnd
-            then return (CellResultNewline EndedYes)
-            else return (CellResultNewline EndedNo)
+            then return (CellResultNewline B.empty EndedYes)
+            else return (CellResultNewline B.empty EndedNo)
       | otherwise -> do
-          bs <- unescapedField delim
-          return (CellResultData bs)
-    Nothing -> return (CellResultNewline EndedYes)
+          (bs,tc) <- unescapedField delim
+          case tc of
+            TrailCharComma -> return (CellResultData bs)
+            TrailCharNewline -> return (CellResultNewline bs EndedNo)
+            TrailCharEnd -> return (CellResultNewline bs EndedYes)
+    Nothing -> return (CellResultNewline B.empty EndedYes)
 {-# INLINE field #-}
 
 eatNewlines :: AL.Parser S.ByteString
@@ -284,16 +287,24 @@ escapedField !delim = do
           Left err -> fail err
       else return s
 
+data TrailChar = TrailCharNewline | TrailCharComma | TrailCharEnd
+
 -- | Consume an unescaped field. If it ends with a newline,
 --   leave that in tact. If it ends with a comma, consume the comma.
-unescapedField :: Word8 -> AL.Parser S.ByteString
-unescapedField !delim = 
-  ( A.takeWhile $ \c -> 
+unescapedField :: Word8 -> AL.Parser (S.ByteString,TrailChar)
+unescapedField !delim = do
+  bs <- A.takeWhile $ \c -> 
     c /= doubleQuote &&
     c /= newline &&
     c /= delim &&
     c /= cr
-  ) <* A.option () (A.skip (== delim))
+  mb <- A.peekWord8
+  case mb of
+    Just b
+      | b == comma -> A.anyWord8 >> return (bs,TrailCharComma)
+      | b == newline || b == cr -> A.anyWord8 >> return (bs,TrailCharNewline)
+      | otherwise -> fail "encounter double quote in unescaped field"
+    Nothing -> return (bs,TrailCharEnd)
 
 dquote :: AL.Parser Char
 dquote = char '"'
@@ -477,8 +488,8 @@ consumeHeaderRow toStr parseCell isNull emptyStr isGood s0 = go 0 StrictListNil 
     ATYP.Fail _ _ _ -> return $ Left $ SiphonError 0 RowErrorParse
     ATYP.Done !c1 !res -> case res of
       -- it might be wrong to ignore whether or not the stream has ended
-      CellResultNewline _ -> do
-        let v = reverseVectorStrictList cellsLen cells
+      CellResultNewline cd _ -> do
+        let v = reverseVectorStrictList (cellsLen + 1) (StrictListCons cd cells)
         return (Right (v :> (SMP.yield c1 >> s1)))
       CellResultData !cd -> if isNull c1
         then go (cellsLen + 1) (StrictListCons cd cells) s1
@@ -518,8 +529,8 @@ consumeBody toStr parseCell isNull emptyStr isGood row0 reqLen siphon s0 =
   handleResult !row !cellsLen !cells !result s1 = case result of
     ATYP.Fail _ _ _ -> return $ Just $ SiphonError row RowErrorParse
     ATYP.Done !c1 !res -> case res of
-      CellResultNewline !ended -> do
-        case decodeRow row (reverseVectorStrictList cellsLen cells) of
+      CellResultNewline !cd !ended -> do
+        case decodeRow row (reverseVectorStrictList (cellsLen + 1) (StrictListCons cd cells)) of
           Left err -> return (Just err)
           Right a -> do
             SMP.yield a
