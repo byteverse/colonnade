@@ -76,7 +76,17 @@ tests =
                 ]
               )
             ) @?= ([(244,'z',True)] :> Nothing)
-    , testCase "Headed Decoding (escaped characters)"
+    , testCase "Headed Decoding (escaped characters, one big chunk)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeHeadedUtf8Csv decodingF
+              ( SMP.yield $ BC8.pack $ concat
+                [ "name\n"
+                , "drew\n"
+                , "\"martin, drew\"\n"
+                ]
+              )
+            ) @?= (["drew","martin, drew"] :> Nothing)
+    , testCase "Headed Decoding (escaped characters, character per chunk)"
         $ ( runIdentity . SMP.toList )
             ( S.decodeHeadedUtf8Csv decodingF
               ( mapM_ (SMP.yield . BC8.singleton) $ concat

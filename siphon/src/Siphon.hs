@@ -251,8 +251,11 @@ field !delim = do
   case mb of
     Just b
       | b == doubleQuote -> do
-          bs <- escapedField delim
-          return (CellResultData bs)
+          (bs,tc) <- escapedField delim
+          case tc of
+            TrailCharComma -> return (CellResultData bs)
+            TrailCharNewline -> return (CellResultNewline bs EndedNo)
+            TrailCharEnd -> return (CellResultNewline bs EndedYes)
       | b == 10 || b == 13 -> do
           _ <- eatNewlines
           isEnd <- A.atEnd
@@ -271,21 +274,31 @@ field !delim = do
 eatNewlines :: AL.Parser S.ByteString
 eatNewlines = A.takeWhile (\x -> x == 10 || x == 13)
 
-escapedField :: Word8 -> AL.Parser S.ByteString
+escapedField :: Word8 -> AL.Parser (S.ByteString,TrailChar)
 escapedField !delim = do
   _ <- dquote
   -- The scan state is 'True' if the previous character was a double
   -- quote.  We need to drop a trailing double quote left by scan.
-  s <- S.init <$> (A.scan False $ \s c -> if c == doubleQuote
-                                          then Just (not s)
-                                          else if s then Nothing
-                                               else Just False)
-  A.option () (A.skip (== delim))
+  s <- S.init <$>
+    ( A.scan False $ \s c ->
+      if c == doubleQuote
+        then Just (not s)
+        else if s
+          then Nothing
+          else Just False
+    )
+  mb <- A.peekWord8
+  trailChar <- case mb of
+    Just b
+      | b == comma -> A.anyWord8 >> return TrailCharComma
+      | b == newline || b == cr -> A.anyWord8 >> return TrailCharNewline
+      | otherwise -> fail "encountered double quote after escaped field"
+    Nothing -> return TrailCharEnd
   if doubleQuote `S.elem` s
-      then case Z.parse unescape s of
-          Right r  -> return r
-          Left err -> fail err
-      else return s
+    then case Z.parse unescape s of
+      Right r  -> return (r,trailChar)
+      Left err -> fail err
+    else return (s,trailChar)
 
 data TrailChar = TrailCharNewline | TrailCharComma | TrailCharEnd
 
@@ -303,7 +316,7 @@ unescapedField !delim = do
     Just b
       | b == comma -> A.anyWord8 >> return (bs,TrailCharComma)
       | b == newline || b == cr -> A.anyWord8 >> return (bs,TrailCharNewline)
-      | otherwise -> fail "encounter double quote in unescaped field"
+      | otherwise -> fail "encountered double quote in unescaped field"
     Nothing -> return (bs,TrailCharEnd)
 
 dquote :: AL.Parser Char
