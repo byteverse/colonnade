@@ -1,7 +1,7 @@
 {-# LANGUAGE DataKinds #-}
 {-# LANGUAGE RankNTypes #-}
 
-{-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors -Werror #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors #-}
 
 -- | Build backend-agnostic columnar encodings that can be 
 --   used to visualize tabular data.
