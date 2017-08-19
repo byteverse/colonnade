@@ -1,5 +1,5 @@
 name:                colonnade
-version:             1.1.0
+version:             1.1.1
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:
   The `colonnade` package provides a way to to talk about
@@ -39,6 +39,7 @@ library
     , text >= 1.0 && < 1.3
     , bytestring >= 0.10 && < 0.11
     , profunctors >= 4.0 && < 5.3
+    , semigroups >= 0.17 && < 0.19
   default-language:    Haskell2010
   ghc-options: -Wall
 
