@@ -8,7 +8,7 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 
 {-# OPTIONS_HADDOCK not-home #-}
-{-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors -Werror #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-imports -fno-warn-unticked-promoted-constructors #-}
 
 -- | Most users of this library do not need this module. The functions
 --   here are used to build functions that apply a 'Colonnade'
