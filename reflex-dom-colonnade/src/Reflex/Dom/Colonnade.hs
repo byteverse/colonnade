@@ -1,6 +1,9 @@
-{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE DataKinds #-}
 {-# LANGUAGE DeriveFunctor #-}
+{-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
+{-# LANGUAGE OverloadedStrings #-}
+{-# LANGUAGE RankNTypes #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
 {-# LANGUAGE UndecidableInstances #-}
@@ -11,10 +14,12 @@ module Reflex.Dom.Colonnade
   (
   -- * Types
     Cell(..)
+  , Resizable(..)
   -- * Table Encoders
   , basic
   , static
   , capped
+  , cappedResizable
   , cappedTraversing
   , dynamic
   , dynamicCapped
@@ -35,18 +40,29 @@ import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as LT
 import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
+import Data.Map.Strict (Map)
+import Data.Text (Text)
 import Data.Foldable (Foldable(..),for_,forM_)
 import Data.Traversable (for)
 import Data.Semigroup (Semigroup(..))
 import Control.Applicative (liftA2)
 import Reflex.Dom
 import Colonnade (Colonnade,Headed,Fascia,Cornice)
+import Data.Monoid (Sum(..))
+import qualified Colonnade as C
 import qualified Colonnade.Encode as E
 
 data Cell t m b = Cell
   { cellAttrs    :: !(Dynamic t (M.Map T.Text T.Text))
   , cellContents :: !(m b)
   } deriving (Functor)
+
+-- | In practice, this size will only ever be set to zero
+--   or one.
+data Resizable t h b = Resizable
+  { resizableSize :: !(Dynamic t Int)
+  , resizableContent :: !(h b)
+  }
 
 elFromCell :: (DomBuilder t m, PostBuild t m) => T.Text -> Cell t m b -> m b
 elFromCell e (Cell attr m) = elDynAttr e attr m
@@ -99,7 +115,7 @@ basic tableAttrs = static tableAttrs (Just (M.empty,M.empty)) mempty (const memp
 body :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
   => M.Map T.Text T.Text
   -> (a -> M.Map T.Text T.Text)
-  -> Colonnade p a (Cell t m e)
+  -> Colonnade h a (Cell t m e)
   -> f a
   -> m e
 body bodyAttrs trAttrs colonnade collection =
@@ -116,6 +132,19 @@ bodyRows trAttrs colonnade collection =
     elAttr "tr" (trAttrs a) .
     unWrappedApplicative $
     E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td") a
+
+bodyResizable :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
+  => Map Text Text
+  -> (a -> Map Text Text)
+  -> Colonnade (Resizable t h) a (Cell t m e)
+  -> f a
+  -> m e
+bodyResizable bodyAttrs trAttrs colonnade collection = elAttr "tbody" bodyAttrs $ do
+  unWrappedApplicative . flip foldMap collection $ \a -> WrappedApplicative
+    $ elAttr "tr" (trAttrs a)
+    $ unWrappedApplicative
+    $ E.rowMonoidalHeader colonnade (\(Resizable dynSize _) (Cell cattr content) -> 
+        WrappedApplicative (elDynAttr "td" (zipDynWith (\i at -> M.insert "colspan" (T.pack (show i)) at) dynSize cattr) content)) a
 
 static ::
   (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Monoid e)
@@ -160,10 +189,10 @@ sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Co
       bodyRows trAttrs colonnade as
 
 encodeCorniceHead ::
-  (DomBuilder t m, PostBuild t m, Monoid e)
+     (DomBuilder t m, PostBuild t m, Monoid e)
   => M.Map T.Text T.Text
   -> Fascia p (M.Map T.Text T.Text)
-  -> E.AnnotatedCornice p a (Cell t m e)
+  -> E.AnnotatedCornice (Maybe Int) p a (Cell t m e)
   -> m e
 encodeCorniceHead headAttrs fascia annCornice =
   elAttr "thead" headAttrs (unWrappedApplicative thead)
@@ -172,14 +201,33 @@ encodeCorniceHead headAttrs fascia annCornice =
           where addColspan = M.insert "colspan" (T.pack (show size))
         addAttr attrs = WrappedApplicative . elAttr "tr" attrs . unWrappedApplicative
 
+encodeCorniceResizableHead :: forall t m e p a.
+     (DomBuilder t m, PostBuild t m, Monoid e)
+  => M.Map T.Text T.Text
+  -> Fascia p (M.Map T.Text T.Text)
+  -> E.AnnotatedCornice (Dynamic t Int) p a (Cell t m e)
+  -> m e
+encodeCorniceResizableHead headAttrs fascia annCornice =
+  elAttr "thead" headAttrs (unWrappedApplicative thead)
+  where 
+  thead :: WrappedApplicative m e
+  thead = E.headersMonoidal (Just (fascia, addAttr)) [(th,id)] annCornice
+  th :: Dynamic t Int -> Cell t m e -> WrappedApplicative m e
+  th size (Cell attrs contents) = WrappedApplicative (elDynAttr "th" (zipDynWith addColspan size attrs) contents)
+    where
+    addColspan :: Int -> Map Text Text -> Map Text Text
+    addColspan i = M.insert "colspan" (T.pack (show i))
+  addAttr :: Map Text Text -> WrappedApplicative m b -> WrappedApplicative m b
+  addAttr attrs = WrappedApplicative . elAttr "tr" attrs . unWrappedApplicative
+
 capped ::
-  (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
+     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
   => M.Map T.Text T.Text -- ^ @\<table\>@ tag attributes
   -> M.Map T.Text T.Text -- ^ @\<thead\>@ tag attributes
   -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
   -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (M.Map T.Text T.Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
-  -> Cornice p a (Cell t m e) -- ^ Data encoding strategy
+  -> Cornice Headed p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
   -> m e
 capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
@@ -187,6 +235,42 @@ capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
     h <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
     b <- body bodyAttrs trAttrs (E.discard cornice) collection
     return (h `mappend` b)
+
+cappedResizable :: 
+     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
+  => Map Text Text -- ^ @\<table\>@ tag attributes
+  -> Map Text Text -- ^ @\<thead\>@ tag attributes
+  -> Map Text Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> Map Text Text) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m e
+cappedResizable tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection = do
+  elAttr "table" tableAttrs $ do
+    h <- encodeCorniceResizableHead headAttrs fascia (dynamicAnnotate cornice)
+    b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
+    return (h `mappend` b)
+
+dynamicAnnotate :: Reflex t
+  => Cornice (Resizable t Headed) p a c
+  -> E.AnnotatedCornice (Dynamic t Int) p a c
+dynamicAnnotate = go where
+  go :: forall t p a c. Reflex t
+    => Cornice (Resizable t Headed) p a c 
+    -> E.AnnotatedCornice (Dynamic t Int) p a c
+  go (E.CorniceBase c@(E.Colonnade cs)) =
+    let parentSz :: Dynamic t (Sum Int)
+        parentSz = foldMap (\(E.OneColonnade (Resizable sz _) _) -> (coerceDynamic sz :: Dynamic t (Sum Int))) cs
+     in E.AnnotatedCorniceBase (coerceDynamic parentSz) (C.mapHeadedness (\(Resizable dynSize (E.Headed content)) -> E.Sized dynSize (E.Headed content)) c)
+  go (E.CorniceCap children) =
+    let annChildren = fmap (mapOneCorniceBody go) children
+        parentSz :: Dynamic t (Sum Int)
+        parentSz = foldMap (\(E.OneCornice _ theBody) -> (coerceDynamic (E.size theBody) :: Dynamic t (Sum Int))) annChildren
+     in E.AnnotatedCorniceCap (coerceDynamic parentSz) annChildren
+
+mapOneCorniceBody :: (forall p' a' c'. k p' a' c' -> j p' a' c') -> E.OneCornice k p a c -> E.OneCornice j p a c
+mapOneCorniceBody f (E.OneCornice h b) = E.OneCornice h (f b)
 
 bodyTraversing :: (DomBuilder t m, PostBuild t m, Traversable f, Monoid e)
   => M.Map T.Text T.Text
@@ -207,7 +291,7 @@ cappedTraversing ::
   -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
   -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (M.Map T.Text T.Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
-  -> Cornice p a (Cell t m e) -- ^ Data encoding strategy
+  -> Cornice Headed p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
   -> m (f e)
 cappedTraversing tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
@@ -251,7 +335,7 @@ encodeCorniceHeadDynamic ::
   (DomBuilder t m, PostBuild t m, Monoid e)
   => Dynamic t (M.Map T.Text T.Text)
   -> Fascia p (Dynamic t (M.Map T.Text T.Text))
-  -> E.AnnotatedCornice p a (Cell t m e)
+  -> E.AnnotatedCornice (Maybe Int) p a (Cell t m e)
   -> m e
 encodeCorniceHeadDynamic headAttrs fascia annCornice =
   elDynAttr "thead" headAttrs (unWrappedApplicative thead)
@@ -267,7 +351,7 @@ dynamicCapped ::
   -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
   -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (Dynamic t (M.Map T.Text T.Text)) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
-  -> Cornice p a (Cell t m e) -- ^ Data encoding strategy
+  -> Cornice Headed p a (Cell t m e) -- ^ Data encoding strategy
   -> Dynamic t (f a) -- ^ Collection of data
   -> m (Event t e)
 dynamicCapped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =

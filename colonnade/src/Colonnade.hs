@@ -272,7 +272,7 @@ replaceWhen = modifyWhen . const
 --   
 --   >>> let cor = mconcat [cap "Person" colPersonFst, cap "House" colHouseSnd]
 --   >>> :t cor
---   cor :: Cornice ('Cap 'Base) (Person, House) [Char]
+--   cor :: Cornice Headed ('Cap 'Base) (Person, House) [Char]
 --   >>> putStr (asciiCapped cor personHomePairs)
 --   +-------------+-----------------+
 --   | Person      | House           |
@@ -284,7 +284,7 @@ replaceWhen = modifyWhen . const
 --   | Sonia | 12  | Green | $150000 |
 --   +-------+-----+-------+---------+
 --   
-cap :: c -> Colonnade Headed a c -> Cornice (Cap Base) a c
+cap :: c -> Colonnade h a c -> Cornice h (Cap Base) a c
 cap h = E.CorniceCap . Vector.singleton . E.OneCornice h . E.CorniceBase
 
 -- | Add another cap to a cornice. There is no limit to how many times
@@ -319,11 +319,11 @@ cap h = E.CorniceCap . Vector.singleton . E.OneCornice h . E.CorniceBase
 --   | Weekday | $8 | $8 | $8 | $6   | $7    | $8 | $8 | $8 | $6   | $7    |
 --   | Weekend | $9 | $9 | $9 | $7   | $8    | $9 | $9 | $9 | $7   | $8    |
 --   +---------+----+----+----+------+-------+----+----+----+------+-------+
-recap :: c -> Cornice p a c -> Cornice (Cap p) a c
+recap :: c -> Cornice h p a c -> Cornice h (Cap p) a c
 recap h cor = E.CorniceCap (Vector.singleton (E.OneCornice h cor))
 
 asciiCapped :: Foldable f
-  => Cornice p a String -- ^ columnar encoding
+  => Cornice Headed p a String -- ^ columnar encoding
   -> f a -- ^ rows
   -> String
 asciiCapped cor xs =
@@ -332,8 +332,16 @@ asciiCapped cor xs =
       sizedCol = E.uncapAnnotated annCor
    in E.headersMonoidal
         Nothing 
-        [ (\sz _ -> hyphens (sz + 2) ++ "+", \s -> "+" ++ s ++ "\n")
-        , (\sz c -> " " ++ rightPad sz ' ' c ++ " |", \s -> "|" ++ s ++ "\n")
+        [ ( \msz _ -> case msz of
+              Just sz -> "+" ++ hyphens (sz + 2)
+              Nothing -> ""
+          , \s -> s ++ "+\n"
+          )
+        , ( \msz c -> case msz of
+              Just sz -> "| " ++ rightPad sz ' ' c ++ " "
+              Nothing -> ""
+          , \s -> s ++ "|\n"
+          )
         ] annCor ++ asciiBody sizedCol xs
       
 
@@ -349,41 +357,49 @@ ascii :: Foldable f
 ascii col xs = 
   let sizedCol = E.sizeColumns List.length xs col
       divider = concat
-        [ "+" 
-        , E.headerMonoidalFull sizedCol 
-             (\(E.Sized sz _) -> hyphens (sz + 2) ++ "+")
-        , "\n"
+        [ E.headerMonoidalFull sizedCol 
+             (\(E.Sized msz _) -> case msz of
+               Just sz -> "+" ++ hyphens (sz + 2)
+               Nothing -> ""
+             )
+        , "+\n"
         ]
    in List.concat
       [ divider
       , concat
-         [ "|"
-         , E.headerMonoidalFull sizedCol
-             (\(E.Sized s (Headed h)) -> " " ++ rightPad s ' ' h ++ " |")
-         , "\n"
+         [ E.headerMonoidalFull sizedCol
+             (\(E.Sized msz (Headed h)) -> case msz of
+               Just sz -> "| " ++ rightPad sz ' ' h ++ " "
+               Nothing -> ""
+             )
+         , "|\n"
          ]
       , asciiBody sizedCol xs
       ]
 
 asciiBody :: Foldable f
-  => Colonnade (E.Sized Headed) a String
+  => Colonnade (E.Sized (Maybe Int) Headed) a String
   -> f a
   -> String
 asciiBody sizedCol xs =
   let divider = concat
-        [ "+" 
-        , E.headerMonoidalFull sizedCol 
-             (\(E.Sized sz _) -> hyphens (sz + 2) ++ "+")
-        , "\n"
+        [ E.headerMonoidalFull sizedCol 
+             (\(E.Sized msz _) -> case msz of
+               Just sz -> "+" ++ hyphens (sz + 2)
+               Nothing -> ""
+             )
+        , "+\n"
         ]
       rowContents = foldMap
         (\x -> concat
-           [ "|"
-           , E.rowMonoidalHeader 
+           [ E.rowMonoidalHeader 
                sizedCol
-               (\(E.Sized sz _) c -> " " ++ rightPad sz ' ' c ++ " |")
+               (\(E.Sized msz _) c -> case msz of
+                 Nothing -> ""
+                 Just sz -> "| " ++ rightPad sz ' ' c ++ " "
+               )
                x
-           , "\n"
+           , "|\n"
            ]
         ) xs
    in List.concat

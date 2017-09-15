@@ -341,7 +341,7 @@ encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
 encodeCappedCellTable :: Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
   -> Fascia p Attribute -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
-  -> Cornice p a Cell 
+  -> Cornice Headed p a Cell 
   -> f a -- ^ Collection of data
   -> Html
 encodeCappedCellTable = encodeCappedTable mempty mempty (const mempty) htmlFromCell
@@ -356,7 +356,7 @@ encodeCappedTable :: Foldable f
   -> ((Html -> Html) -> c -> Html) -- ^ Wrap content and convert to 'Html'
   -> Attribute -- ^ Attributes of @\<table\>@ element
   -> Fascia p Attribute -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
-  -> Cornice p a c 
+  -> Cornice Headed p a c 
   -> f a -- ^ Collection of data
   -> Html
 encodeCappedTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs fascia cornice xs = do
@@ -366,7 +366,12 @@ encodeCappedTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs fascia co
     H.thead ! theadAttrs $ do
       Encode.headersMonoidal 
         (Just (fascia, \attrs theHtml -> H.tr ! attrs $ theHtml))
-        [(\sz c -> wrapContent H.th c ! HA.colspan (H.toValue (show sz)),id)]
+        [ ( \msz c -> case msz of
+              Just sz -> wrapContent H.th c ! HA.colspan (H.toValue (show sz))
+              Nothing -> mempty
+          , id
+          )
+        ]
         annCornice
       -- H.tr ! trAttrs $ do
       -- Encode.headerMonoidalGeneral colonnade (wrapContent H.th)
