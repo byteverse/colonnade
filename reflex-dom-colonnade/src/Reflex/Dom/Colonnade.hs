@@ -144,7 +144,12 @@ bodyResizable bodyAttrs trAttrs colonnade collection = elAttr "tbody" bodyAttrs 
     $ elAttr "tr" (trAttrs a)
     $ unWrappedApplicative
     $ E.rowMonoidalHeader colonnade (\(Resizable dynSize _) (Cell cattr content) -> 
-        WrappedApplicative (elDynAttr "td" (zipDynWith (\i at -> M.insert "colspan" (T.pack (show i)) at) dynSize cattr) content)) a
+        WrappedApplicative (elDynAttr "td" (zipDynWith setColspanOrHide dynSize cattr) content)) a
+
+setColspanOrHide :: Int -> Map Text Text -> Map Text Text
+setColspanOrHide i m
+  | i < 1 = M.insertWith T.append "style" "display:none;" m
+  | otherwise = M.insert "colspan" (T.pack (show i)) m
 
 static ::
   (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Monoid e)
@@ -213,10 +218,7 @@ encodeCorniceResizableHead headAttrs fascia annCornice =
   thead :: WrappedApplicative m e
   thead = E.headersMonoidal (Just (fascia, addAttr)) [(th,id)] annCornice
   th :: Dynamic t Int -> Cell t m e -> WrappedApplicative m e
-  th size (Cell attrs contents) = WrappedApplicative (elDynAttr "th" (zipDynWith addColspan size attrs) contents)
-    where
-    addColspan :: Int -> Map Text Text -> Map Text Text
-    addColspan i = M.insert "colspan" (T.pack (show i))
+  th size (Cell attrs contents) = WrappedApplicative (elDynAttr "th" (zipDynWith setColspanOrHide size attrs) contents)
   addAttr :: Map Text Text -> WrappedApplicative m b -> WrappedApplicative m b
   addAttr attrs = WrappedApplicative . elAttr "tr" attrs . unWrappedApplicative
 
