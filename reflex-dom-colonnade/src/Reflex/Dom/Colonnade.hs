@@ -20,6 +20,7 @@ module Reflex.Dom.Colonnade
   , static
   , capped
   , cappedResizable
+  , cappedResizableTableless
   , cappedTraversing
   , dynamic
   , dynamicCapped
@@ -262,6 +263,23 @@ cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornic
     b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
     c <- beneathBody
     return (h `mappend` b, c, E.size annCornice)
+
+-- | Same as 'cappedResizable' but without the @\<table\>@ wrapping it.
+--   Also, it does not take extra content to go beneath the @\<tbody\>@.
+cappedResizableTableless :: 
+     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
+  => Map Text Text -- ^ @\<thead\>@ tag attributes
+  -> Map Text Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> Map Text Text) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m (e, Dynamic t Int)
+cappedResizableTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
+  let annCornice = dynamicAnnotate cornice
+  h <- encodeCorniceResizableHead headAttrs fascia annCornice
+  b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
+  return (h `mappend` b, E.size annCornice)
 
 dynamicAnnotate :: Reflex t
   => Cornice (Resizable t Headed) p a c
