@@ -249,19 +249,19 @@ cappedResizable ::
   => Map Text Text -- ^ @\<table\>@ tag attributes
   -> Map Text Text -- ^ @\<thead\>@ tag attributes
   -> Map Text Text -- ^ @\<tbody\>@ tag attributes
-  -> m () -- ^ Content beneath @\<tbody\>@. Should either be empty or a @\<tfoot\>@.
+  -> m c -- ^ Content beneath @\<tbody\>@. Should either be empty or a @\<tfoot\>@.
   -> (a -> Map Text Text) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
   -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
-  -> m (e, Dynamic t Int)
+  -> m (e, c, Dynamic t Int)
 cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornice collection = do
   elAttr "table" tableAttrs $ do
     let annCornice = dynamicAnnotate cornice
     h <- encodeCorniceResizableHead headAttrs fascia annCornice
     b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
-    beneathBody
-    return (h `mappend` b, E.size annCornice)
+    c <- beneathBody
+    return (h `mappend` b, c, E.size annCornice)
 
 dynamicAnnotate :: Reflex t
   => Cornice (Resizable t Headed) p a c
