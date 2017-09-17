@@ -239,7 +239,11 @@ capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
     return (h `mappend` b)
 
 -- | This is useful when you want to be able to toggle the visibility
---   of columns after the table has been built.
+--   of columns after the table has been built. In additon to the
+--   usual monoidal result, the return value also includes a 'Dynamic'
+--   that gives the current number of visible columns. This is seldom
+--   useful, but it can be helpful if the table footer needs to be
+--   given a @colspan@ that matches the number of visible columns.
 cappedResizable :: 
      (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
   => Map Text Text -- ^ @\<table\>@ tag attributes
@@ -250,13 +254,14 @@ cappedResizable ::
   -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
   -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
-  -> m e
+  -> m (e, Dynamic t Int)
 cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornice collection = do
   elAttr "table" tableAttrs $ do
-    h <- encodeCorniceResizableHead headAttrs fascia (dynamicAnnotate cornice)
+    let annCornice = dynamicAnnotate cornice
+    h <- encodeCorniceResizableHead headAttrs fascia annCornice
     b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
     beneathBody
-    return (h `mappend` b)
+    return (h `mappend` b, E.size annCornice)
 
 dynamicAnnotate :: Reflex t
   => Cornice (Resizable t Headed) p a c
