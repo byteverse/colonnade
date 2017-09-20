@@ -18,6 +18,7 @@ module Reflex.Dom.Colonnade
   -- * Table Encoders
   , basic
   , static
+  , staticTableless
   , capped
   , cappedResizable
   , cappedResizableTableless
@@ -168,6 +169,21 @@ static tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
       elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
         E.headerMonadicGeneral_ colonnade (elFromCell "th")
     body bodyAttrs trAttrs colonnade collection
+
+staticTableless ::
+  (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Monoid e)
+  => Maybe (M.Map T.Text T.Text, M.Map T.Text T.Text)
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
+  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> Colonnade h a (Cell t m e) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m e
+staticTableless mheadAttrs bodyAttrs trAttrs colonnade collection = do
+  for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+    elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
+      E.headerMonadicGeneral_ colonnade (elFromCell "th")
+  body bodyAttrs trAttrs colonnade collection
 
 -- | A table dividing into sections by @\<td\>@ elements that
 --   take up entire rows.
