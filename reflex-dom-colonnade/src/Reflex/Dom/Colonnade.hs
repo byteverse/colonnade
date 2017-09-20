@@ -116,7 +116,7 @@ basic tableAttrs = static tableAttrs (Just (M.empty,M.empty)) mempty (const memp
 
 body :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
   => M.Map T.Text T.Text
-  -> (a -> M.Map T.Text T.Text)
+  -> (a -> Dynamic t (M.Map T.Text T.Text))
   -> Colonnade h a (Cell t m e)
   -> f a
   -> m e
@@ -124,14 +124,14 @@ body bodyAttrs trAttrs colonnade collection =
   elAttr "tbody" bodyAttrs (bodyRows trAttrs colonnade collection)
 
 bodyRows :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
-  => (a -> M.Map T.Text T.Text)
+  => (a -> Dynamic t (M.Map T.Text T.Text))
   -> Colonnade p a (Cell t m e)
   -> f a
   -> m e
 bodyRows trAttrs colonnade collection =
   unWrappedApplicative . flip foldMap collection $ \a ->
     WrappedApplicative .
-    elAttr "tr" (trAttrs a) .
+    elDynAttr "tr" (trAttrs a) .
     unWrappedApplicative $
     E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td") a
 
@@ -168,14 +168,14 @@ static tableAttrs mheadAttrs bodyAttrs trAttrs colonnade collection =
     for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
       elAttr "thead" headAttrs . elAttr "tr" headTrAttrs $
         E.headerMonadicGeneral_ colonnade (elFromCell "th")
-    body bodyAttrs trAttrs colonnade collection
+    body bodyAttrs (pure . trAttrs) colonnade collection
 
 staticTableless ::
   (DomBuilder t m, PostBuild t m, Foldable f, Foldable h, Monoid e)
   => Maybe (M.Map T.Text T.Text, M.Map T.Text T.Text)
   -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
   -> M.Map T.Text T.Text -- ^ @\<tbody\>@ tag attributes
-  -> (a -> M.Map T.Text T.Text) -- ^ @\<tr\>@ tag attributes
+  -> (a -> Dynamic t (M.Map T.Text T.Text)) -- ^ @\<tr\>@ tag attributes
   -> Colonnade h a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
   -> m e
@@ -208,7 +208,7 @@ sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Co
       let Cell attrsB contentsB = dividerContent b
       elAttr "tr" M.empty $ do
         elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> attrsB) contentsB
-      bodyRows trAttrs colonnade as
+      bodyRows (pure . trAttrs) colonnade as
 
 encodeCorniceHead ::
      (DomBuilder t m, PostBuild t m, Monoid e)
@@ -252,7 +252,7 @@ capped ::
 capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
   elAttr "table" tableAttrs $ do
     h <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
-    b <- body bodyAttrs trAttrs (E.discard cornice) collection
+    b <- body bodyAttrs (pure . trAttrs) (E.discard cornice) collection
     return (h `mappend` b)
 
 -- | This is useful when you want to be able to toggle the visibility
