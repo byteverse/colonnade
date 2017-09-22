@@ -1,4 +1,5 @@
 {-# LANGUAGE DataKinds #-}
+{-# LANGUAGE DeriveFoldable #-}
 {-# LANGUAGE DeriveFunctor #-}
 {-# LANGUAGE GADTs #-}
 {-# LANGUAGE GeneralizedNewtypeDeriving #-}
@@ -26,6 +27,7 @@ module Reflex.Dom.Colonnade
   , dynamic
   , dynamicCapped
   , expandable
+  , expandableResizableTableless
   , sectioned
     -- * Cell Functions
   , cell
@@ -34,6 +36,7 @@ module Reflex.Dom.Colonnade
   , textCell
   , lazyTextCell
   , builderCell
+  , headedResizable
   ) where
 
 import Data.String (IsString(..))
@@ -64,7 +67,7 @@ data Cell t m b = Cell
 data Resizable t h b = Resizable
   { resizableSize :: !(Dynamic t Int)
   , resizableContent :: !(h b)
-  }
+  } deriving (Foldable)
 
 elFromCell :: (DomBuilder t m, PostBuild t m) => T.Text -> Cell t m b -> m b
 elFromCell e (Cell attr m) = elDynAttr e attr m
@@ -88,6 +91,9 @@ lazyTextCell = textCell . LT.toStrict
 
 builderCell :: DomBuilder t m => LT.Builder -> Cell t m ()
 builderCell = textCell . LT.toStrict . LT.toLazyText
+
+headedResizable :: Dynamic t Int -> c -> (a -> c) -> Colonnade (Resizable t Headed) a c
+headedResizable d c = C.singleton (Resizable d (E.Headed c))
 
 -- | This instance is requires @UndecidableInstances@ and is kind of
 --   bad, but @reflex@ already abusing type classes so much that it
@@ -431,4 +437,23 @@ expandable tableAttrs tdExpandedAttrs as encoding@(E.Colonnade v) = do
                 elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> tdExpandedAttrs) widg
         return e'
       widgetHold (return ()) e'
+
+expandableResizableTableless :: forall t m f a b. (MonadWidget t m, Foldable f)
+  => f a -- ^ Values
+  -> (Event t b -> m ())
+     -- ^ Encoding over additional content
+  -> Colonnade (Resizable t Headed) a (m (Event t (Maybe b)))
+     -- ^ Encoding into cells with events that can fire to create additional content under the row
+  -> m ()
+expandableResizableTableless as expansion encoding@(E.Colonnade v) = do
+  let vlen = coerceDynamic (foldMap (\(E.OneColonnade (Resizable sz _) _) -> coerceDynamic sz :: Dynamic t (Sum Int)) v) :: Dynamic t (Sum Int)
+      totalSizeAttr = fmap (\i -> M.singleton "colspan" (T.pack (show i))) vlen
+  _ <- el "thead" $ el "tr" $ E.headerMonadicGeneral_ encoding (el "th")
+  el "tbody" $ forM_ as $ \a -> do
+    x <- el "tr" $ E.rowMonadicWith [] (++) encoding (fmap (\k -> [k]) . el "td") a
+    let e = leftmost x
+    d <- holdDyn Nothing e
+    elDynAttr "tr" (fmap (maybe (M.singleton "style" "display:none;") (const M.empty)) d) $ do
+      elDynAttr "td" totalSizeAttr (expansion (fmapMaybe id e))
+
 
