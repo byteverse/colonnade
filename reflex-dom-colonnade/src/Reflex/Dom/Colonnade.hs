@@ -47,6 +47,8 @@ module Reflex.Dom.Colonnade
   , headedResizable
     -- * Other Stuff
   , defBureau
+    -- * Pagination
+  , semUiFixedPagination
   ) where
 
 import Data.String (IsString(..))
@@ -68,6 +70,7 @@ import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice,Headedness(..))
 import Data.Monoid (Sum(..))
 import Data.Proxy
 import Control.Monad.Fix (MonadFix)
+import Control.Monad (forM)
 import qualified Colonnade as C
 import qualified Colonnade.Encode as E
 
@@ -94,6 +97,20 @@ data Bureau t h a = Bureau
   }
   -- , bureauHeadRow :: h (Dynamic t (Map Text Text))
 
+data Pagination t m = Pagination
+  { paginationRows :: Int
+    -- ^ Maximum number of rows on a page
+  , paginationArrangement :: Arrangement t
+    -- ^ Where pagination is situated relative to table
+  , paginationContent :: Dynamic t Int -> m (Dynamic t Int)
+    -- ^ The argument to this function is an @Dynamic@ that carries
+    --   the total number of pages that should be available. When
+    --   this dynamic changes, it means that the rows backing the
+    --   table have been changed. Typically, this should cause
+    --   the @Dynamic@ in the return value to reset to 0. This
+    --   returned @Dynamic@ represents the current page.
+  }
+
 -- | Where the pagination goes relative to the table
 data Arrangement t
   = ArrangementAbove
@@ -103,14 +120,6 @@ data Arrangement t
       (Dynamic t (Map Text Text))
       (Dynamic t (Map Text Text))
       -- ^ contains attributes of @\<tfoot\>@, its inner @\<tr\>@, and its inner @\<th\>@.
-
--- | The argument to this function is an @Dynamic@ that carries
---   the total number of pages that should be available. When
---   this dynamic changes, it means that the rows backing the
---   table have been changed. Typically, this should cause
---   the @Dynamic@ in the return value to reset to 0. This
---   returned @Dynamic@ represents the current page.
-newtype Pagination t m = Pagination { runPagination :: Dynamic t Int -> m (Dynamic t Int) }
 
 class (PostBuild t m, DomBuilder t m) => Cellular t m c | c -> m, c -> t where
   cellularAttrs :: c b -> Dynamic t (Map Text Text)
@@ -563,18 +572,15 @@ data Visible a = Visible !Bool a
 
 paginated :: forall t b h m a c.
      (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h)
-  => Bureau t b a
-  -> Arrangement t
-  -> Pagination t m
-  -> Int -- ^ number of records on a page
+  => Bureau t b a -- ^ table class settings
+  -> Pagination t m -- ^ pagination settings
   -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
-  -> Colonnade h (Dynamic t a) (c ())
-  -> Dynamic t (Vector a)
+  -> Colonnade h (Dynamic t a) (c ()) -- ^ column blueprint
+  -> Dynamic t (Vector a) -- ^ table row data
   -> m ()
-paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) arrange (Pagination makePagination) pageSize aDef col vecD = do
+paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef col vecD = do
   let colLifted :: Colonnade h (Dynamic t (Visible a)) (c ())
       colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
-      -- colLifted = E.Colonnade (V.map (\(E.OneColonnade h f) -> E.OneColonnade h (\x -> maybe nothingContents f)) (E.getColonnade col))
       makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
       makeVals page = V.generate pageSize $ \ix -> do
           p <- page
@@ -587,14 +593,20 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) arrange (Pagination m
         Visible isVisible a <- d
         attrs <- trAttrs a
         return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+      size :: Dynamic t Int
+      size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
+      let tfootAttrsExtra = zipDynWith
+            ( \sz attrs -> if sz > 0 then attrs else M.insert "style" "display:none;" attrs
+            ) size tfootAttrs
       tableHeader theadAttrs colLifted
       let vals = makeVals page
       tableBody bodyAttrs trAttrsLifted colLifted vals
-      page <- elDynAttr "tfoot" tfootAttrs $ do
+      page <- elDynAttr "tfoot" tfootAttrsExtra $ do
         elDynAttr "tr" tfootTrAttrs $ do
-          elDynAttr "th" tfootThAttrs $ do
+          let attrs = zipDynWith insertSizeAttr size tfootThAttrs
+          elDynAttr "th" attrs $ do
             makePagination totalPages
       return ()
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
@@ -657,5 +669,41 @@ insertSizeAttr i m
   | i < 1 = M.insertWith T.append "style" "display:none;" m
   | otherwise = M.insert "colspan" (T.pack (show i)) m
 
+-- | only used internally for implementations of 'Pagination'.
+data Movement = Forward | Backward | Position !Int
 
-
+-- | Pagination using the classes and DOM layout that Semantic UI
+--   expects. The function will typically be partially applided
+--   to the first two arguments to make it suitable as a field
+--   of 'Pagination'.
+semUiFixedPagination :: MonadWidget t m
+  => Int -- ^ Maximum allowed number of pages.
+  -> Text -- ^ Extra classes to be applied. Already included is @ui pagination menu@.
+  -> Dynamic t Int
+  -> m (Dynamic t Int)
+semUiFixedPagination maxPageCount extraClass pageCount = do
+  elClass "div" (T.append "ui pagination menu " extraClass) $ mdo
+    (bckEl,()) <- elClass' "a" "icon item" $ do
+      elClass "i" "left chevron icon" (return ())
+    let bck = Backward <$ domEvent Click bckEl
+    posList <- forM (enumFromTo 0 (maxPageCount - 1)) $ \i -> do
+      let attrs = zipDynWith (\ct pg -> M.unionsWith (<>)
+              [ if i < ct then M.empty else M.singleton "style" "display:none;"
+              , if i == pg then M.singleton "class" " active " else M.empty
+              , M.singleton "class" " item "
+              ]
+            ) pageCount page
+      (pageEl, ()) <- elDynAttr' "a" attrs (text (T.pack (show i)))
+      return (Position i <$ domEvent Click pageEl)
+    (fwdEl,()) <- elClass' "a" "icon item" $ do
+      elClass "i" "right chevron icon" (return ())
+    let fwd = Forward <$ domEvent Click fwdEl
+    let moveEv = leftmost (fwd : bck : posList)
+    page <- foldDynM (\move oldPage -> case move of
+        Backward -> return (max 0 (oldPage - 1))
+        Forward -> do
+          nowPageCount <- sample (current pageCount)
+          return (min (nowPageCount - 1) (oldPage + 1))
+        Position updatedPage -> return updatedPage
+      ) 0 moveEv
+    holdUniqDyn page
