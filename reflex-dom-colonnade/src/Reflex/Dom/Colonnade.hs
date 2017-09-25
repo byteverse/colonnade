@@ -582,6 +582,7 @@ expandable tableAttrs tdExpandedAttrs as encoding@(E.Colonnade v) = do
 
 data Visible a = Visible !Bool a
 
+-- TODO: figure out a way to get rid of the awful default value hack
 paginated :: forall t b h m a c.
      (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h)
   => Bureau t b a -- ^ table class settings
@@ -599,7 +600,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
           v <- vecD
           return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
-      totalPages = fmap ((`div` pageSize) . V.length) vecD
+      totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
       hideWhenUnipage = zipDynWith
         ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
@@ -624,6 +625,9 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       return ()
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
  
+divRoundUp :: Int -> Int -> Int
+divRoundUp a b = case divMod a b of
+  (x,y) -> if y == 0 then x else x + 1
     
 tableHeader :: forall t b h c a m.
      (Reflex t, Sizable t b h, Cellular t m c, Headedness b)
