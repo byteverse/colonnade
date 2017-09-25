@@ -12,6 +12,8 @@ module Colonnade
     Colonnade
   , Headed(..)
   , Headless(..)
+    -- * Typeclasses
+  , E.Headedness(..)
     -- * Create
   , headed
   , headless

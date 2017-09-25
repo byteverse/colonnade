@@ -44,6 +44,9 @@ module Colonnade.Encode
   , Headed(..)
   , Headless(..)
   , Sized(..)
+  , ExtractForall(..)
+    -- ** Typeclasses
+  , Headedness(..)
     -- ** Row
   , row
   , rowMonadic
@@ -234,12 +237,13 @@ headerMonadic (Colonnade v) g =
   fmap (mconcat . Vector.toList) $ Vector.mapM (g . getHeaded . oneColonnadeHead) v
 
 headerMonadicGeneral_ :: 
-     (Monad m, Foldable h)
+     (Monad m, Headedness h)
   => Colonnade h a c
   -> (c -> m b)
   -> m ()
-headerMonadicGeneral_ (Colonnade v) g =
-  Vector.mapM_ (mapM_ g . oneColonnadeHead) v
+headerMonadicGeneral_ (Colonnade v) g = case headednessExtract of
+  Nothing -> return ()
+  Just f -> Vector.mapM_ (g . f . oneColonnadeHead) v
 
 headerMonoidalGeneral ::
      (Monoid m, Foldable h)
@@ -493,6 +497,10 @@ data MutableSizedColonnade s h a c = MutableSizedColonnade
 newtype Headed a = Headed { getHeaded :: a }
   deriving (Eq,Ord,Functor,Show,Read,Foldable)
 
+instance Applicative Headed where
+  pure = Headed
+  Headed f <*> Headed a = Headed (f a)
+
 -- | As the first argument to the 'Colonnade' type 
 --   constructor, this indictates that the columnar encoding does not have 
 --   a header. This type is isomorphic to 'Proxy' but is 
@@ -504,6 +512,10 @@ newtype Headed a = Headed { getHeaded :: a }
 --   in which the columns do not have headings.
 data Headless a = Headless
   deriving (Eq,Ord,Functor,Show,Read,Foldable)
+
+instance Applicative Headless where
+  pure _ = Headless
+  Headless <*> Headless = Headless
 
 data Sized sz f a = Sized
   { sizedSize :: !sz
@@ -620,8 +632,38 @@ data AnnotatedCornice sz (p :: Pillar) a c where
 
 -- data MaybeInt = JustInt {-# UNPACK #-} !Int | NothingInt
 
--- | This is provided with vector-0.12, but we include a copy here 
+-- | This is provided with @vector-0.12@, but we include a copy here 
 --   for compatibility.
 vectorConcatNE :: NonEmpty (Vector a) -> Vector a
 vectorConcatNE = Vector.concat . toList
+
+-- | This class communicates that a container holds either zero
+--   elements or one element. Furthermore, all inhabitants of
+--   the type must hold the same number of elements. Both
+--   'Headed' and 'Headless' have instances. The following
+--   law accompanies any instances:
+--
+--   > maybe x (\f -> f (headednessPure x)) headednessContents == x
+--   > todo: come up with another law that relates to Traversable
+--
+--   Consequently, there is no instance for 'Maybe', which cannot
+--   satisfy the laws since it has inhabitants which hold different
+--   numbers of elements. 'Nothing' holds 0 elements and 'Just' holds
+--   1 element.
+class Headedness h where
+  headednessPure :: a -> h a
+  headednessExtract :: Maybe (h a -> a)
+  headednessExtractForall :: Maybe (ExtractForall h)
+
+instance Headedness Headed where
+  headednessPure = Headed
+  headednessExtract = Just getHeaded 
+  headednessExtractForall = Just (ExtractForall getHeaded)
+
+instance Headedness Headless where
+  headednessPure _ = Headless
+  headednessExtract = Nothing
+  headednessExtractForall = Nothing
+
+newtype ExtractForall h = ExtractForall { runExtractForall :: forall a. h a -> a }
 
