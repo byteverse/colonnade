@@ -23,6 +23,8 @@ module Reflex.Dom.Colonnade
   , Bureau(..)
   , Arrangement(..)
   , Pagination(..)
+  -- * Typeclasses
+  , Cellular(..)
   -- * Table Encoders
   , basic
   , static
@@ -71,6 +73,7 @@ import Data.Monoid (Sum(..))
 import Data.Proxy
 import Control.Monad.Fix (MonadFix)
 import Control.Monad (forM)
+import Control.Monad.Trans.Reader (ReaderT)
 import qualified Colonnade as C
 import qualified Colonnade.Encode as E
 
@@ -121,6 +124,7 @@ data Arrangement t
       (Dynamic t (Map Text Text))
       -- ^ contains attributes of @\<tfoot\>@, its inner @\<tr\>@, and its inner @\<th\>@.
 
+-- | Things that can be rendered as cells in a table.
 class (PostBuild t m, DomBuilder t m) => Cellular t m c | c -> m, c -> t where
   cellularAttrs :: c b -> Dynamic t (Map Text Text)
   cellularContents :: c b -> m b
@@ -130,6 +134,14 @@ instance (PostBuild t m, DomBuilder t m) => Cellular t m (Cell t m) where
   cellularContents = cellContents
 
 instance (Reflex t, DomBuilder t m, PerformEvent t m, MonadHold t m, MonadFix m) => Cellular t (PostBuildT t m) (PostBuildT t m) where
+  cellularAttrs _ = pure M.empty
+  cellularContents = id
+
+instance Cellular t m m => Cellular t (ReaderT r m) (ReaderT r m) where
+  cellularAttrs _ = pure M.empty
+  cellularContents = id
+  
+instance (Cellular t m m, MonadHold t m, MonadFix m, Semigroup w) => Cellular t (EventWriterT t w m) (EventWriterT t w m) where
   cellularAttrs _ = pure M.empty
   cellularContents = id
   
