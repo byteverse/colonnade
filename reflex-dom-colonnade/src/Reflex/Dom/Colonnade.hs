@@ -600,6 +600,10 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
           return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`div` pageSize) . V.length) vecD
+      hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
+      hideWhenUnipage = zipDynWith
+        ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
+        ) totalPages
       trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
       trAttrsLifted d = do
         Visible isVisible a <- d
@@ -609,13 +613,10 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
-      let tfootAttrsExtra = zipDynWith
-            ( \sz attrs -> if sz > 0 then attrs else M.insert "style" "display:none;" attrs
-            ) size tfootAttrs
       tableHeader theadAttrs colLifted
       let vals = makeVals page
       tableBody bodyAttrs trAttrsLifted colLifted vals
-      page <- elDynAttr "tfoot" tfootAttrsExtra $ do
+      page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
         elDynAttr "tr" tfootTrAttrs $ do
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
