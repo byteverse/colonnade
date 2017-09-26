@@ -39,6 +39,7 @@ module Reflex.Dom.Colonnade
   -- , expandableResizableTableless
   , sectioned
   , paginated
+  , paginatedExpandable
     -- * Cell Functions
   , cell
   , charCell
@@ -583,6 +584,9 @@ expandable tableAttrs tdExpandedAttrs as encoding@(E.Colonnade v) = do
 data Visible a = Visible !Bool a
 
 -- TODO: figure out a way to get rid of the awful default value hack
+-- It would be nice to use foldDynMaybeM, but we still need an initial
+-- value. We could try to wait to generate the rows until we've seen
+-- a value, but that seems confusing.
 paginated :: forall t b h m a c.
      (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h)
   => Bureau t b a -- ^ table class settings
@@ -624,15 +628,63 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
             makePagination totalPages
       return ()
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
+
+-- | A paginated table with a fixed number of rows. Each row can
+--   expand a section beneath it, represented as an additional
+--   table row. CSS rules that give the table a striped appearance
+--   are unlikely to work since there are hidden rows.
+paginatedExpandable :: forall t b h m a c.
+     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, MonadHold t m)
+  => Bureau t b a -- ^ table class settings
+  -> Pagination t m -- ^ pagination settings
+  -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
+  -> (Dynamic t a -> m ()) -- expandable extra content
+  -> Colonnade h (Dynamic t a) (c (Dynamic t Bool))
+     -- ^ Column blueprint. The boolean event enables and disables the expansion.
+  -> Dynamic t (Vector a) -- ^ table row data
+  -> m ()
+paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef expansion col vecD = do
+  let colLifted :: Colonnade h (Dynamic t (Visible a)) (c (Dynamic t Bool))
+      colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
+      expansionLifted :: Dynamic t (Visible a) -> m ()
+      expansionLifted = expansion . fmap (\(Visible _ a) -> a)
+      makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
+      makeVals page = V.generate pageSize $ \ix -> do
+          p <- page
+          v <- vecD
+          return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+      totalPages :: Dynamic t Int
+      totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
+      hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
+      hideWhenUnipage = zipDynWith
+        ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
+        ) totalPages
+      trAttrsLifted :: Visible a -> Dynamic t (Map Text Text)
+      trAttrsLifted (Visible _ a) = trAttrs a
+      size :: Dynamic t Int
+      size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
+  elDynAttr "table" tableAttrs $ case arrange of
+    ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
+      tableHeader theadAttrs colLifted
+      let vals = makeVals page
+      tableBodyExpandable size expansionLifted bodyAttrs trAttrsLifted colLifted vals
+      page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
+        elDynAttr "tr" tfootTrAttrs $ do
+          let attrs = zipDynWith insertSizeAttr size tfootThAttrs
+          elDynAttr "th" attrs $ do
+            makePagination totalPages
+      return ()
+    _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
+
  
 divRoundUp :: Int -> Int -> Int
 divRoundUp a b = case divMod a b of
   (x,y) -> if y == 0 then x else x + 1
     
-tableHeader :: forall t b h c a m.
+tableHeader :: forall t b h c a m x.
      (Reflex t, Sizable t b h, Cellular t m c, Headedness b)
   => b (Dynamic t (Map Text Text), Dynamic t (Map Text Text))
-  -> Colonnade h a (c ())
+  -> Colonnade h a (c x)
   -> m ()
 tableHeader theadAttrsWrap col = case headednessExtractForall of
   Nothing -> return ()
@@ -642,7 +694,7 @@ tableHeader theadAttrsWrap col = case headednessExtractForall of
       elDynAttr "tr" trAttrs $ do
         headerMonadicGeneralSizable_ col (extract . sizableCast (Proxy :: Proxy t))
     where
-    extract :: forall x. b x -> x
+    extract :: forall y. b y -> y
     extract = E.runExtractForall extractForall
     
 tableBody :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e, Cellular t m c, Sizable t b h)
@@ -657,9 +709,41 @@ tableBody bodyAttrs trAttrs col collection =
       return (mappend m e)
     ) mempty collection
 
+-- | This function has a implementation that is careful to only
+--   redraw the expansion rows, which are usually hidden, when
+--   it is necessary to do so.
+tableBodyExpandable :: forall t m c b a h. (DomBuilder t m, MonadHold t m, PostBuild t m, Cellular t m c, Sizable t b h)
+  => Dynamic t Int -- ^ number of visible columns in the table
+  -> (Dynamic t a -> m ())
+  -> Dynamic t (M.Map T.Text T.Text)
+  -> (a -> Dynamic t (M.Map T.Text T.Text))
+  -> Colonnade h (Dynamic t a) (c (Dynamic t Bool))
+  -> Vector (Dynamic t a)
+  -> m ()
+tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection =
+  elDynAttr "tbody" bodyAttrs $ mapM_ (\a -> do
+      let attrs = trAttrs =<< a
+      expanded <- elDynAttr "tr" attrs (rowSizableReified (return False) (zipDynWith (||)) col a)
+      visibleVal <- gateDynamic expanded a
+      elDynAttr "tr" attrs $ do
+        -- TODO: possibly provide a way to customize these attributes
+        let expansionTdAttrs = pure M.empty
+        elDynAttr "td" (zipDynWith insertSizeAttr colCount expansionTdAttrs) (renderExpansion visibleVal)
+    ) collection
+
+-- | Create a dynamic whose value only updates when the gate is 'True'.
+--   This dynamic starts out with the original value of its input
+--   regardless of whether the gate is true or false.
+gateDynamic :: (MonadHold t m, Reflex t) => Dynamic t Bool -> Dynamic t a -> m (Dynamic t a)
+gateDynamic g a = do
+  a0 <- sample (current a)
+  -- TODO: throw a nubDynWith in here
+  let e = fmapMaybe id (updated (zipDynWith (\b v -> if b then Just v else Nothing) g a))
+  holdDyn a0 e
+
 headerMonadicGeneralSizable_ :: (Sizable t b h, Cellular t m c)
-  => Colonnade h a (c ())
-  -> (h (c ()) -> c ())
+  => Colonnade h a (c x)
+  -> (h (c x) -> c x)
   -> m ()
 headerMonadicGeneralSizable_ (E.Colonnade v) extract = 
   V.mapM_ go v
@@ -669,6 +753,19 @@ headerMonadicGeneralSizable_ (E.Colonnade v) extract =
         c = extract h
         attrs = zipDynWith insertSizeAttr (sizableSize h) (cellularAttrs c)
     elDynAttr "th" attrs (cellularContents c)
+
+rowSizableReified :: (Sizable t b h, Cellular t m c)
+  => e -- ^ identity element
+  -> (e -> e -> e) -- ^ associative append
+  -> Colonnade h a (c e)
+  -> a
+  -> m e
+rowSizableReified theEmpty theAppend (E.Colonnade v) a = V.foldM (\m oc -> do
+    let c = E.oneColonnadeEncode oc a
+    e <- elDynAttr "td" (cellularAttrs c) $ do
+      cellularContents c
+    return (theAppend m e)
+  ) theEmpty v
 
 rowSizable :: (Sizable t b h, Cellular t m c, Monoid e)
   => Colonnade h a (c e)
@@ -687,7 +784,7 @@ insertSizeAttr i m
   | otherwise = M.insert "colspan" (T.pack (show i)) m
 
 -- | only used internally for implementations of 'Pagination'.
-data Movement = Forward | Backward | Position !Int
+data Movement = Forward | Backward | Position {-# UNPACK #-} !Int
 
 -- | Pagination using the classes and DOM layout that Semantic UI
 --   expects. The function will typically be partially applided
