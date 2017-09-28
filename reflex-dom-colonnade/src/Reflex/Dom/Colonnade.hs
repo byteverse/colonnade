@@ -659,8 +659,13 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
       hideWhenUnipage = zipDynWith
         ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
         ) totalPages
-      trAttrsLifted :: Visible a -> Dynamic t (Map Text Text)
-      trAttrsLifted (Visible _ a) = trAttrs a
+      -- trAttrsLifted :: Visible a -> Dynamic t (Map Text Text)
+      -- trAttrsLifted (Visible _ a) = trAttrs a
+      trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
+      trAttrsLifted d = do
+        Visible isVisible a <- d
+        attrs <- trAttrs a
+        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
       size :: Dynamic t Int
       size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
@@ -716,14 +721,14 @@ tableBodyExpandable :: forall t m c b a h. (DomBuilder t m, MonadHold t m, PostB
   => Dynamic t Int -- ^ number of visible columns in the table
   -> (Dynamic t a -> m ())
   -> Dynamic t (M.Map T.Text T.Text)
-  -> (a -> Dynamic t (M.Map T.Text T.Text))
+  -> (Dynamic t a -> Dynamic t (M.Map T.Text T.Text))
   -> Colonnade h (Dynamic t a) (c (Dynamic t Bool))
   -> Vector (Dynamic t a)
   -> a -- ^ initial value, a hack
   -> m ()
 tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection a0 =
   elDynAttr "tbody" bodyAttrs $ mapM_ (\a -> do
-      let attrs = trAttrs =<< a
+      let attrs = trAttrs a
       expanded <- elDynAttr "tr" attrs (rowSizableReified (return False) (zipDynWith (||)) col a)
       visibleVal <- gateDynamic expanded a0 a
       elDynAttr "tr" attrs $ do
