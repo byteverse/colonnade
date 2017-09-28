@@ -731,7 +731,7 @@ tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection a0
       let attrs = trAttrs a
       expanded <- elDynAttr "tr" attrs (rowSizableReified (return False) (zipDynWith (||)) col a)
       visibleVal <- gateDynamic expanded a0 a
-      elDynAttr "tr" attrs $ do
+      elDynAttr "tr" (zipDynWith insertVisibilityAttr expanded attrs) $ do
         -- TODO: possibly provide a way to customize these attributes
         let expansionTdAttrs = pure M.empty
         elDynAttr "td" (zipDynWith insertSizeAttr colCount expansionTdAttrs) (renderExpansion visibleVal)
@@ -782,6 +782,11 @@ rowSizable (E.Colonnade v) a = V.foldM (\m oc -> do
       cellularContents c
     return (mappend m e)
   ) mempty v
+
+insertVisibilityAttr :: Bool -> Map Text Text -> Map Text Text
+insertVisibilityAttr b m = case b of
+  False -> M.insertWith T.append "style" "display:none;" m
+  True -> m
 
 insertSizeAttr :: Int -> Map Text Text -> Map Text Text
 insertSizeAttr i m
