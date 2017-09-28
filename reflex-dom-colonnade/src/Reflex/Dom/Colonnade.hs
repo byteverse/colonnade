@@ -587,16 +587,16 @@ data Visible a = Visible !Bool a
 -- It would be nice to use foldDynMaybeM, but we still need an initial
 -- value. We could try to wait to generate the rows until we've seen
 -- a value, but that seems confusing.
-paginated :: forall t b h m a c.
-     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h)
+paginated :: forall t b h m a c e.
+     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, Monoid e)
   => Bureau t b a -- ^ table class settings
   -> Pagination t m -- ^ pagination settings
   -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
-  -> Colonnade h (Dynamic t a) (c ()) -- ^ column blueprint
+  -> Colonnade h (Dynamic t a) (c e) -- ^ column blueprint
   -> Dynamic t (Vector a) -- ^ table row data
-  -> m ()
+  -> m e
 paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef col vecD = do
-  let colLifted :: Colonnade h (Dynamic t (Visible a)) (c ())
+  let colLifted :: Colonnade h (Dynamic t (Visible a)) (c e)
       colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
       makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
       makeVals page = V.generate pageSize $ \ix -> do
@@ -620,13 +620,13 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
       tableHeader theadAttrs colLifted
       let vals = makeVals page
-      tableBody bodyAttrs trAttrsLifted colLifted vals
+      e <- tableBody bodyAttrs trAttrsLifted colLifted vals
       page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
         elDynAttr "tr" tfootTrAttrs $ do
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return ()
+      return e
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
 
 -- | A paginated table with a fixed number of rows. Each row can
