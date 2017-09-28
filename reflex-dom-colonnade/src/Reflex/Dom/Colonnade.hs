@@ -667,7 +667,7 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
       tableHeader theadAttrs colLifted
       let vals = makeVals page
-      tableBodyExpandable size expansionLifted bodyAttrs trAttrsLifted colLifted vals
+      tableBodyExpandable size expansionLifted bodyAttrs trAttrsLifted colLifted vals (Visible True aDef)
       page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
         elDynAttr "tr" tfootTrAttrs $ do
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
@@ -719,12 +719,13 @@ tableBodyExpandable :: forall t m c b a h. (DomBuilder t m, MonadHold t m, PostB
   -> (a -> Dynamic t (M.Map T.Text T.Text))
   -> Colonnade h (Dynamic t a) (c (Dynamic t Bool))
   -> Vector (Dynamic t a)
+  -> a -- ^ initial value, a hack
   -> m ()
-tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection =
+tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection a0 =
   elDynAttr "tbody" bodyAttrs $ mapM_ (\a -> do
       let attrs = trAttrs =<< a
       expanded <- elDynAttr "tr" attrs (rowSizableReified (return False) (zipDynWith (||)) col a)
-      visibleVal <- gateDynamic expanded a
+      visibleVal <- gateDynamic expanded a0 a
       elDynAttr "tr" attrs $ do
         -- TODO: possibly provide a way to customize these attributes
         let expansionTdAttrs = pure M.empty
@@ -734,9 +735,8 @@ tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection =
 -- | Create a dynamic whose value only updates when the gate is 'True'.
 --   This dynamic starts out with the original value of its input
 --   regardless of whether the gate is true or false.
-gateDynamic :: (MonadHold t m, Reflex t) => Dynamic t Bool -> Dynamic t a -> m (Dynamic t a)
-gateDynamic g a = do
-  a0 <- sample (current a)
+gateDynamic :: (MonadHold t m, Reflex t) => Dynamic t Bool -> a -> Dynamic t a -> m (Dynamic t a)
+gateDynamic g a0 a = do
   -- TODO: throw a nubDynWith in here
   let e = fmapMaybe id (updated (zipDynWith (\b v -> if b then Just v else Nothing) g a))
   holdDyn a0 e
