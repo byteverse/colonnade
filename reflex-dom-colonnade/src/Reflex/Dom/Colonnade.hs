@@ -600,9 +600,9 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
       makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
       makeVals page = V.generate pageSize $ \ix -> do
-          p <- page
-          v <- vecD
-          return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+        p <- page
+        v <- vecD
+        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
@@ -767,7 +767,9 @@ rowSizableReified :: (Sizable t b h, Cellular t m c)
   -> m e
 rowSizableReified theEmpty theAppend (E.Colonnade v) a = V.foldM (\m oc -> do
     let c = E.oneColonnadeEncode oc a
-    e <- elDynAttr "td" (cellularAttrs c) $ do
+        sz = sizableSize (E.oneColonnadeHead oc)
+        attrs = zipDynWith insertSizeAttr sz (cellularAttrs c)
+    e <- elDynAttr "td" attrs $ do
       cellularContents c
     return (theAppend m e)
   ) theEmpty v
@@ -778,7 +780,9 @@ rowSizable :: (Sizable t b h, Cellular t m c, Monoid e)
   -> m e
 rowSizable (E.Colonnade v) a = V.foldM (\m oc -> do
     let c = E.oneColonnadeEncode oc a
-    e <- elDynAttr "td" (cellularAttrs c) $ do
+        sz = sizableSize (E.oneColonnadeHead oc)
+        attrs = zipDynWith insertSizeAttr sz (cellularAttrs c)
+    e <- elDynAttr "td" attrs $ do
       cellularContents c
     return (mappend m e)
   ) mempty v
