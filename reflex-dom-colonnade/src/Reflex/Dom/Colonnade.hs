@@ -826,7 +826,7 @@ semUiFixedPagination maxPageCount extraClass pageCount = do
     (fwdEl,()) <- elClass' "a" "icon item" $ do
       elClass "i" "right chevron icon" (return ())
     let fwd = Forward <$ domEvent Click fwdEl
-    let moveEv = leftmost (fwd : bck : posList)
+    let moveEv = leftmost (fwd : bck : (Position 0 <$ updated pageCount) : posList)
     page <- foldDynM (\move oldPage -> case move of
         Backward -> return (max 0 (oldPage - 1))
         Forward -> do
