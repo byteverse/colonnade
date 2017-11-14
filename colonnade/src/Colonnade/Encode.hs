@@ -285,22 +285,22 @@ endow f x = case x of
   go c (CorniceBase (Colonnade v)) = V.map (mapOneColonnadeHeader (f c)) v
   go c (CorniceCap v) = V.concatMap (\(OneCornice h b) -> go (f c h) b) v
 
-uncapAnnotated :: forall sz p a c.
-     AnnotatedCornice sz p a c
-  -> Colonnade (Sized sz Headed) a c
+uncapAnnotated :: forall sz p a c h.
+     AnnotatedCornice sz h p a c
+  -> Colonnade (Sized sz h) a c
 uncapAnnotated x = case x of
   AnnotatedCorniceBase _ colonnade -> colonnade
   AnnotatedCorniceCap _ v -> Colonnade (V.concatMap (\(OneCornice _ b) -> go b) v)
   where
   go :: forall p'. 
-       AnnotatedCornice sz p' a c
-    -> Vector (OneColonnade (Sized sz Headed) a c)
+       AnnotatedCornice sz h p' a c
+    -> Vector (OneColonnade (Sized sz h) a c)
   go (AnnotatedCorniceBase _ (Colonnade v)) = v
   go (AnnotatedCorniceCap _ v) = V.concatMap (\(OneCornice _ b) -> go b) v
 
-annotate :: Cornice Headed p a c -> AnnotatedCornice (Maybe Int) p a c
+annotate :: Cornice Headed p a c -> AnnotatedCornice (Maybe Int) Headed p a c
 annotate = go where
-  go :: forall p a c. Cornice Headed p a c -> AnnotatedCornice (Maybe Int) p a c
+  go :: forall p a c. Cornice Headed p a c -> AnnotatedCornice (Maybe Int) Headed p a c
   go (CorniceBase c) = let len = V.length (getColonnade c) in
     AnnotatedCorniceBase
       (if len > 0 then (Just len) else Nothing)
@@ -333,7 +333,7 @@ annotateFinely :: Foldable f
   -> (c -> Int) -- ^ Get size from content
   -> f a
   -> Cornice Headed p a c 
-  -> AnnotatedCornice (Maybe Int) p a c
+  -> AnnotatedCornice (Maybe Int) Headed p a c
 annotateFinely g finish toSize xs cornice = runST $ do
   m <- newMutableSizedCornice cornice
   sizeColonnades toSize xs m
@@ -360,12 +360,12 @@ freezeMutableSizedCornice :: forall s p a c.
      (Int -> Int -> Int) -- ^ fold function
   -> (Int -> Int) -- ^ finalize
   -> MutableSizedCornice s p a c 
-  -> ST s (AnnotatedCornice (Maybe Int) p a c)
+  -> ST s (AnnotatedCornice (Maybe Int) Headed p a c)
 freezeMutableSizedCornice step finish = go
   where
   go :: forall p' a' c'.
        MutableSizedCornice s p' a' c' 
-    -> ST s (AnnotatedCornice (Maybe Int) p' a' c')
+    -> ST s (AnnotatedCornice (Maybe Int) Headed p' a' c')
   go (MutableSizedCorniceBase msc) = do
     szCol <- freezeMutableSizedColonnade msc
     let sz = 
@@ -400,7 +400,7 @@ mapHeadedness f (Colonnade v) =
 
 
 -- | This is an O(1) operation, sort of
-size :: AnnotatedCornice sz p a c -> sz
+size :: AnnotatedCornice sz h p a c -> sz
 size x = case x of
   AnnotatedCorniceBase m _ -> m
   AnnotatedCorniceCap sz _ -> sz
@@ -411,23 +411,25 @@ mapOneCorniceBody f (OneCornice h b) = OneCornice h (f b)
 mapOneColonnadeHeader :: Functor h => (c -> c) -> OneColonnade h a c -> OneColonnade h a c
 mapOneColonnadeHeader f (OneColonnade h b) = OneColonnade (fmap f h) b
 
-headersMonoidal :: forall sz r m c p a.
-     Monoid m
+headersMonoidal :: forall sz r m c p a h.
+     (Monoid m, Headedness h)
   => Maybe (Fascia p r, r -> m -> m) -- ^ Apply the Fascia header row content
   -> [(sz -> c -> m, m -> m)] -- ^ Build content from cell content and size
-  -> AnnotatedCornice sz p a c
+  -> AnnotatedCornice sz h p a c
   -> m
 headersMonoidal wrapRow fromContentList = go wrapRow
   where
-  go :: forall p'. Maybe (Fascia p' r, r -> m -> m) -> AnnotatedCornice sz p' a c -> m
+  go :: forall p'. Maybe (Fascia p' r, r -> m -> m) -> AnnotatedCornice sz h p' a c -> m
   go ef (AnnotatedCorniceBase _ (Colonnade v)) = 
     let g :: m -> m
         g m = case ef of
           Nothing -> m
           Just (FasciaBase r, f) -> f r m
-     in g $ foldMap (\(fromContent,wrap) -> wrap 
-          (foldMap (\(OneColonnade (Sized sz (Headed h)) _) -> 
-            (fromContent sz h)) v)) fromContentList
+     in case headednessExtract of
+          Just unhead -> g $ foldMap (\(fromContent,wrap) -> wrap 
+            (foldMap (\(OneColonnade (Sized sz h) _) -> 
+              (fromContent sz (unhead h))) v)) fromContentList
+          Nothing -> mempty
   go ef (AnnotatedCorniceCap _ v) = 
     let g :: m -> m
         g m = case ef of
@@ -444,8 +446,8 @@ headersMonoidal wrapRow fromContentList = go wrapRow
                  Just annCoreNext -> go (Just (fn,f)) annCoreNext
 
 flattenAnnotated ::
-     Vector (OneCornice (AnnotatedCornice sz) p a c)
-  -> Maybe (AnnotatedCornice sz p a c)
+     Vector (OneCornice (AnnotatedCornice sz h) p a c)
+  -> Maybe (AnnotatedCornice sz h p a c)
 flattenAnnotated v = case v V.!? 0 of 
   Nothing -> Nothing
   Just (OneCornice _ x) -> Just $ case x of
@@ -454,8 +456,8 @@ flattenAnnotated v = case v V.!? 0 of
 
 flattenAnnotatedBase ::
      sz
-  -> Vector (OneCornice (AnnotatedCornice sz) Base a c)
-  -> AnnotatedCornice sz Base a c
+  -> Vector (OneCornice (AnnotatedCornice sz h) Base a c)
+  -> AnnotatedCornice sz h Base a c
 flattenAnnotatedBase msz = AnnotatedCorniceBase msz
   . Colonnade 
   . V.concatMap 
@@ -463,13 +465,13 @@ flattenAnnotatedBase msz = AnnotatedCorniceBase msz
 
 flattenAnnotatedCap ::
      sz
-  -> Vector (OneCornice (AnnotatedCornice sz) (Cap p) a c)
-  -> AnnotatedCornice sz (Cap p) a c
+  -> Vector (OneCornice (AnnotatedCornice sz h) (Cap p) a c)
+  -> AnnotatedCornice sz h (Cap p) a c
 flattenAnnotatedCap m = AnnotatedCorniceCap m . V.concatMap getTheVector
 
 getTheVector :: 
-     OneCornice (AnnotatedCornice sz) (Cap p) a c 
-  -> Vector (OneCornice (AnnotatedCornice sz) p a c)
+     OneCornice (AnnotatedCornice sz h) (Cap p) a c 
+  -> Vector (OneCornice (AnnotatedCornice sz h) p a c)
 getTheVector (OneCornice _ (AnnotatedCorniceCap _ v)) = v
 
 data MutableSizedCornice s (p :: Pillar) a c where
@@ -594,11 +596,22 @@ data Fascia (p :: Pillar) r where
 data OneCornice k (p :: Pillar) a c = OneCornice
   { oneCorniceHead :: !c
   , oneCorniceBody :: !(k p a c)
-  }
+  } deriving (Functor)
 
 data Cornice h (p :: Pillar) a c where
   CorniceBase :: !(Colonnade h a c) -> Cornice h Base a c
   CorniceCap :: {-# UNPACK #-} !(Vector (OneCornice (Cornice h) p a c)) -> Cornice h (Cap p) a c
+
+instance Functor h => Functor (Cornice h p a) where
+  fmap f x = case x of
+    CorniceBase c -> CorniceBase (fmap f c)
+    CorniceCap c -> CorniceCap (mapVectorCornice f c)
+
+instance Functor h => Profunctor (Cornice h p) where
+  rmap = fmap
+  lmap f x = case x of
+    CorniceBase c -> CorniceBase (lmap f c)
+    CorniceCap c -> CorniceCap (contramapVectorCornice f c)
 
 instance Semigroup (Cornice h p a c) where
   CorniceBase a <> CorniceBase b = CorniceBase (mappend a b)
@@ -614,21 +627,30 @@ instance ToEmptyCornice p => Monoid (Cornice h p a c) where
     [] -> toEmptyCornice
     x : xs2 -> Semigroup.sconcat (x :| xs2)
 
+mapVectorCornice :: Functor h => (c -> d) -> Vector (OneCornice (Cornice h) p a c) -> Vector (OneCornice (Cornice h) p a d)
+mapVectorCornice f = V.map (fmap f)
+
+contramapVectorCornice :: Functor h => (b -> a) -> Vector (OneCornice (Cornice h) p a c) -> Vector (OneCornice (Cornice h) p b c)
+contramapVectorCornice f = V.map (lmapOneCornice f)
+
+lmapOneCornice :: Functor h => (b -> a) -> OneCornice (Cornice h) p a c -> OneCornice (Cornice h) p b c
+lmapOneCornice f (OneCornice theHead theBody) = OneCornice theHead (lmap f theBody) 
+
 getCorniceBase :: Cornice h Base a c -> Colonnade h a c
 getCorniceBase (CorniceBase c) = c
 
 getCorniceCap :: Cornice h (Cap p) a c -> Vector (OneCornice (Cornice h) p a c)
 getCorniceCap (CorniceCap c) = c
 
-data AnnotatedCornice sz (p :: Pillar) a c where
+data AnnotatedCornice sz h (p :: Pillar) a c where
   AnnotatedCorniceBase ::
        !sz
-    -> !(Colonnade (Sized sz Headed) a c)
-    -> AnnotatedCornice sz Base a c
+    -> !(Colonnade (Sized sz h) a c)
+    -> AnnotatedCornice sz h Base a c
   AnnotatedCorniceCap :: 
        !sz
-    -> {-# UNPACK #-} !(Vector (OneCornice (AnnotatedCornice sz) p a c))
-    -> AnnotatedCornice sz (Cap p) a c
+    -> {-# UNPACK #-} !(Vector (OneCornice (AnnotatedCornice sz h) p a c))
+    -> AnnotatedCornice sz h (Cap p) a c
 
 -- data MaybeInt = JustInt {-# UNPACK #-} !Int | NothingInt
 

@@ -136,7 +136,7 @@ encodeHeadedCellTable :: Foldable f
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadedCellTable = encodeTable
-  (Just mempty) mempty (const mempty) widgetFromCell 
+  (E.Headed mempty) mempty (const mempty) widgetFromCell 
 
 encodeHeadlessCellTable :: Foldable f
   => Attribute -- ^ Attributes of @table@ element
@@ -144,7 +144,7 @@ encodeHeadlessCellTable :: Foldable f
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadlessCellTable = encodeTable
-  Nothing mempty (const mempty) widgetFromCell 
+  E.Headless mempty (const mempty) widgetFromCell 
 
 encodeHeadedWidgetTable :: Foldable f
   => Attribute -- ^ Attributes of @table@ element
@@ -152,7 +152,7 @@ encodeHeadedWidgetTable :: Foldable f
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadedWidgetTable = encodeTable
-  (Just mempty) mempty (const mempty) ($ mempty)
+  (E.Headed mempty) mempty (const mempty) ($ mempty)
 
 encodeHeadlessWidgetTable :: Foldable f
   => Attribute -- ^ Attributes of @\<table\>@ element
@@ -160,14 +160,14 @@ encodeHeadlessWidgetTable :: Foldable f
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
 encodeHeadlessWidgetTable = encodeTable
-  Nothing mempty (const mempty) ($ mempty) 
+  E.Headless mempty (const mempty) ($ mempty) 
 
 -- | Encode a table. This handles a very general case and
 --   is seldom needed by users. One of the arguments provided is
 --   used to add attributes to the generated @\<tr\>@ elements.
 encodeTable ::
-     (Foldable f, Foldable h)
-  => Maybe Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
+     (Foldable f, E.Headedness h)
+  => h Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
   -> Attribute -- ^ Attributes of @\<tbody\>@ element
   -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
   -> ((Attribute -> WidgetT site IO () -> WidgetT site IO ()) -> c -> WidgetT site IO ()) -- ^ Wrap content and convert to 'Html'
@@ -175,10 +175,10 @@ encodeTable ::
   -> Colonnade h a c -- ^ How to encode data as a row
   -> f a -- ^ Collection of data
   -> WidgetT site IO ()
-encodeTable mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
+encodeTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
   table_ tableAttrs $ do
-    for_ mtheadAttrs $ \theadAttrs -> do
-      thead_ theadAttrs $ do
+    for_ E.headednessExtract $ \unhead ->
+      thead_ (unhead theadAttrs) $ do
         E.headerMonadicGeneral_ colonnade (wrapContent th_)
     tbody_ tbodyAttrs $ do
       forM_ xs $ \x -> do

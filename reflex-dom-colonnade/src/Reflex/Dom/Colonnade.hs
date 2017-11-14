@@ -21,6 +21,7 @@ module Reflex.Dom.Colonnade
     Cell(..)
   , Resizable(..)
   , Bureau(..)
+  , Chest(..)
   , Arrangement(..)
   , Pagination(..)
   -- * Typeclasses
@@ -40,6 +41,7 @@ module Reflex.Dom.Colonnade
   , sectioned
   , paginated
   , paginatedExpandable
+  , paginatedCapped
     -- * Cell Functions
   , cell
   , charCell
@@ -99,7 +101,14 @@ data Bureau t h a = Bureau
   , bureauRow :: (a -> Dynamic t (Map Text Text))
     -- ^ attributes of each @\<tr\>@, based on the element
   }
-  -- , bureauHeadRow :: h (Dynamic t (Map Text Text))
+
+data Chest p t a = Chest
+  { chestTable :: Dynamic t (Map Text Text)
+  , chestHead :: Dynamic t (Map Text Text)
+  , chestFascia :: Fascia p (Map Text Text)
+  , chestBody :: Dynamic t (Map Text Text)
+  , chestRow :: (a -> Dynamic t (Map Text Text))
+  }
 
 data Pagination t m = Pagination
   { paginationRows :: Int
@@ -266,18 +275,20 @@ bodyRows trAttrs colonnade collection =
     unWrappedApplicative $
     E.rowMonoidal colonnade (WrappedApplicative . elFromCell "td") a
 
-bodyResizable :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
-  => Map Text Text
-  -> (a -> Map Text Text)
-  -> Colonnade (Resizable t h) a (Cell t m e)
+bodyResizable :: (Cellular t m c, DomBuilder t m, PostBuild t m, Foldable f, Monoid e)
+  => Dynamic t (Map Text Text)
+  -> (a -> Dynamic t (Map Text Text))
+  -> Colonnade (Resizable t h) a (c e)
   -> f a
   -> m e
-bodyResizable bodyAttrs trAttrs colonnade collection = elAttr "tbody" bodyAttrs $ do
+bodyResizable bodyAttrs trAttrs colonnade collection = elDynAttr "tbody" bodyAttrs $ do
   unWrappedApplicative . flip foldMap collection $ \a -> WrappedApplicative
-    $ elAttr "tr" (trAttrs a)
+    $ elDynAttr "tr" (trAttrs a)
     $ unWrappedApplicative
-    $ E.rowMonoidalHeader colonnade (\(Resizable dynSize _) (Cell cattr content) -> 
-        WrappedApplicative (elDynAttr "td" (zipDynWith setColspanOrHide dynSize cattr) content)) a
+    $ E.rowMonoidalHeader colonnade (\(Resizable dynSize _) c -> 
+        let cattr = cellularAttrs c
+            content = cellularContents c
+         in WrappedApplicative (elDynAttr "td" (zipDynWith setColspanOrHide dynSize cattr) content)) a
 
 setColspanOrHide :: Int -> Map Text Text -> Map Text Text
 setColspanOrHide i m
@@ -345,7 +356,7 @@ encodeCorniceHead ::
      (DomBuilder t m, PostBuild t m, Monoid e)
   => M.Map T.Text T.Text
   -> Fascia p (M.Map T.Text T.Text)
-  -> E.AnnotatedCornice (Maybe Int) p a (Cell t m e)
+  -> E.AnnotatedCornice (Maybe Int) Headed p a (Cell t m e)
   -> m e
 encodeCorniceHead headAttrs fascia annCornice =
   elAttr "thead" headAttrs (unWrappedApplicative thead)
@@ -358,7 +369,7 @@ encodeCorniceResizableHead :: forall t m e p a.
      (DomBuilder t m, PostBuild t m, Monoid e)
   => M.Map T.Text T.Text
   -> Fascia p (M.Map T.Text T.Text)
-  -> E.AnnotatedCornice (Dynamic t Int) p a (Cell t m e)
+  -> E.AnnotatedCornice (Dynamic t Int) Headed p a (Cell t m e)
   -> m e
 encodeCorniceResizableHead headAttrs fascia annCornice =
   elAttr "thead" headAttrs (unWrappedApplicative thead)
@@ -368,6 +379,22 @@ encodeCorniceResizableHead headAttrs fascia annCornice =
   th :: Dynamic t Int -> Cell t m e -> WrappedApplicative m e
   th size (Cell attrs contents) = WrappedApplicative (elDynAttr "th" (zipDynWith setColspanOrHide size attrs) contents)
   addAttr :: Map Text Text -> WrappedApplicative m b -> WrappedApplicative m b
+  addAttr attrs = WrappedApplicative . elAttr "tr" attrs . unWrappedApplicative
+
+encodeCorniceHeadGeneral :: forall t m e p a b c.
+     (DomBuilder t m, PostBuild t m, Monoid e, Headedness b, Cellular t m c)
+  => Dynamic t (M.Map T.Text T.Text)
+  -> Fascia p (M.Map T.Text T.Text)
+  -> E.AnnotatedCornice (Dynamic t Int) b p a (c e)
+  -> m e
+encodeCorniceHeadGeneral headAttrs fascia annCornice =
+  elDynAttr "thead" headAttrs (unWrappedApplicative thead)
+  where 
+  thead :: WrappedApplicative m e
+  thead = E.headersMonoidal (Just (fascia, addAttr)) [(th,id)] annCornice
+  th :: Dynamic t Int -> c e -> WrappedApplicative m e
+  th size c = WrappedApplicative (elDynAttr "th" (zipDynWith setColspanOrHide size (cellularAttrs c)) (cellularContents c))
+  addAttr :: Map Text Text -> WrappedApplicative m r -> WrappedApplicative m r
   addAttr attrs = WrappedApplicative . elAttr "tr" attrs . unWrappedApplicative
 
 capped ::
@@ -407,7 +434,7 @@ cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornic
   elAttr "table" tableAttrs $ do
     let annCornice = dynamicAnnotate cornice
     h <- encodeCorniceResizableHead headAttrs fascia annCornice
-    b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
+    b <- bodyResizable (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
     c <- beneathBody
     return (h `mappend` b, c, E.size annCornice)
 
@@ -425,20 +452,58 @@ cappedResizableTableless ::
 cappedResizableTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
   let annCornice = dynamicAnnotate cornice
   h <- encodeCorniceResizableHead headAttrs fascia annCornice
-  b <- bodyResizable bodyAttrs trAttrs (E.discard cornice) collection
+  b <- bodyResizable (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
   return (h `mappend` b, E.size annCornice)
+
+cappedTableless :: 
+     (Headedness b, Sizable t b h, DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e, Cellular t m c)
+  => Dynamic t (Map Text Text) -- ^ @\<thead\>@ tag attributes
+  -> Dynamic t (Map Text Text) -- ^ @\<tbody\>@ tag attributes
+  -> (a -> Dynamic t (Map Text Text)) -- ^ @\<tr\>@ tag attributes
+  -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
+  -> Cornice h p a (c e) -- ^ Data encoding strategy
+  -> f a -- ^ Collection of data
+  -> m (e, Dynamic t Int)
+cappedTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
+  let annCornice = dynamicAnnotateGeneral cornice
+  h <- encodeCorniceHeadGeneral headAttrs fascia annCornice
+  b <- bodyResizable bodyAttrs trAttrs
+    (C.mapHeadedness sizedToResizable (E.uncapAnnotated annCornice))
+    collection
+  return (h `mappend` b, E.size annCornice)
+ 
+sizedToResizable :: E.Sized (Dynamic t Int) h a -> Resizable t h a
+sizedToResizable (E.Sized sz h) = Resizable sz h
 
 dynamicAnnotate :: Reflex t
   => Cornice (Resizable t Headed) p a c
-  -> E.AnnotatedCornice (Dynamic t Int) p a c
+  -> E.AnnotatedCornice (Dynamic t Int) Headed p a c
 dynamicAnnotate = go where
   go :: forall t p a c. Reflex t
     => Cornice (Resizable t Headed) p a c 
-    -> E.AnnotatedCornice (Dynamic t Int) p a c
+    -> E.AnnotatedCornice (Dynamic t Int) Headed p a c
   go (E.CorniceBase c@(E.Colonnade cs)) =
     let parentSz :: Dynamic t (Sum Int)
         parentSz = foldMap (\(E.OneColonnade (Resizable sz _) _) -> (coerceDynamic sz :: Dynamic t (Sum Int))) cs
      in E.AnnotatedCorniceBase (coerceDynamic parentSz) (C.mapHeadedness (\(Resizable dynSize (E.Headed content)) -> E.Sized dynSize (E.Headed content)) c)
+  go (E.CorniceCap children) =
+    let annChildren = fmap (mapOneCorniceBody go) children
+        parentSz :: Dynamic t (Sum Int)
+        parentSz = foldMap (\(E.OneCornice _ theBody) -> (coerceDynamic (E.size theBody) :: Dynamic t (Sum Int))) annChildren
+     in E.AnnotatedCorniceCap (coerceDynamic parentSz) annChildren
+
+-- | Like dynamicAnnotate but more general.
+dynamicAnnotateGeneral :: (Reflex t, Sizable t b h)
+  => Cornice h p a c
+  -> E.AnnotatedCornice (Dynamic t Int) b p a c
+dynamicAnnotateGeneral = go where
+  go :: forall t p a c b h. (Reflex t, Sizable t b h)
+    => Cornice h p a c 
+    -> E.AnnotatedCornice (Dynamic t Int) b p a c
+  go (E.CorniceBase c@(E.Colonnade cs)) =
+    let parentSz :: Dynamic t (Sum Int)
+        parentSz = foldMap (\(E.OneColonnade h _) -> (coerceDynamic (sizableSize h) :: Dynamic t (Sum Int))) cs
+     in E.AnnotatedCorniceBase (coerceDynamic parentSz) (C.mapHeadedness (\h -> E.Sized (sizableSize h) (sizableCast (Proxy :: Proxy t) h)) c)
   go (E.CorniceCap children) =
     let annChildren = fmap (mapOneCorniceBody go) children
         parentSz :: Dynamic t (Sum Int)
@@ -511,7 +576,7 @@ encodeCorniceHeadDynamic ::
   (DomBuilder t m, PostBuild t m, Monoid e)
   => Dynamic t (M.Map T.Text T.Text)
   -> Fascia p (Dynamic t (M.Map T.Text T.Text))
-  -> E.AnnotatedCornice (Maybe Int) p a (Cell t m e)
+  -> E.AnnotatedCornice (Maybe Int) Headed p a (Cell t m e)
   -> m e
 encodeCorniceHeadDynamic headAttrs fascia annCornice =
   elDynAttr "thead" headAttrs (unWrappedApplicative thead)
@@ -521,7 +586,7 @@ encodeCorniceHeadDynamic headAttrs fascia annCornice =
         addAttr attrs = WrappedApplicative . elDynAttr "tr" attrs . unWrappedApplicative
 
 dynamicCapped ::
-  (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Semigroup e, Monoid e)
+     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Semigroup e, Monoid e)
   => Dynamic t (M.Map T.Text T.Text) -- ^ @\<table\>@ tag attributes
   -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<thead\>@ tag attributes
   -> Dynamic t (M.Map T.Text T.Text) -- ^ @\<tbody\>@ tag attributes
@@ -629,6 +694,46 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       return e
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
 
+paginatedCapped :: forall t b h m a c p e.
+     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, MonadHold t m, Monoid e)
+  => Chest p t a
+  -> Pagination t m -- ^ pagination settings
+  -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
+  -> Cornice h p (Dynamic t a) (c e) -- ^ Data encoding strategy
+  -> Dynamic t (Vector a) -- ^ table row data
+  -> m e
+paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef col vecD = do
+  let colLifted :: Cornice h p (Dynamic t (Visible a)) (c e)
+      colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
+      makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
+      makeVals page = V.generate pageSize $ \ix -> do
+        p <- page
+        v <- vecD
+        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+      totalPages :: Dynamic t Int
+      totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
+      hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
+      hideWhenUnipage = zipDynWith
+        ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
+        ) totalPages
+      trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
+      trAttrsLifted d = do
+        Visible isVisible a <- d
+        attrs <- trAttrs a
+        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+  elDynAttr "table" tableAttrs $ case arrange of
+    ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
+      let vals = makeVals page
+      (e, size) <- cappedTableless theadAttrs bodyAttrs trAttrsLifted fascia colLifted vals
+      page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
+        elDynAttr "tr" tfootTrAttrs $ do
+          let attrs = zipDynWith insertSizeAttr size tfootThAttrs
+          elDynAttr "th" attrs $ do
+            makePagination totalPages
+      return e
+    _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
+      
+
 -- | A paginated table with a fixed number of rows. Each row can
 --   expand a section beneath it, represented as an additional
 --   table row. CSS rules that give the table a striped appearance
@@ -650,17 +755,15 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
       expansionLifted = expansion . fmap (\(Visible _ a) -> a)
       makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
       makeVals page = V.generate pageSize $ \ix -> do
-          p <- page
-          v <- vecD
-          return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+        p <- page
+        v <- vecD
+        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
       hideWhenUnipage = zipDynWith
         ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
         ) totalPages
-      -- trAttrsLifted :: Visible a -> Dynamic t (Map Text Text)
-      -- trAttrsLifted (Visible _ a) = trAttrs a
       trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
       trAttrsLifted d = do
         Visible isVisible a <- d
