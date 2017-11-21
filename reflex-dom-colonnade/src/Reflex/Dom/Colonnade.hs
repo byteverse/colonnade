@@ -924,7 +924,7 @@ semUiFixedPagination maxPageCount extraClass pageCount = do
               , M.singleton "class" " item "
               ]
             ) pageCount page
-      (pageEl, ()) <- elDynAttr' "a" attrs (text (T.pack (show i)))
+      (pageEl, ()) <- elDynAttr' "a" attrs (text (T.pack (show (i + 1))))
       return (Position i <$ domEvent Click pageEl)
     (fwdEl,()) <- elClass' "a" "icon item" $ do
       elClass "i" "right chevron icon" (return ())
