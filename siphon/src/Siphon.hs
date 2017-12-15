@@ -3,18 +3,43 @@
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE RankNTypes #-}
 
--- {-# OPTIONS_GHC -Wall -Werr -fno-warn-unused-imports #-}
+{-# OPTIONS_GHC -Wall -fno-warn-unused-imports #-}
 
+-- | Build CSVs using the abstractions provided in the @colonnade@ library, and 
+--   parse CSVs using 'Siphon', which is the dual of 'Colonnade'.
+--   Read the documentation for @colonnade@ before reading the documentation
+--   for @siphon@. All of the examples on this page assume the following
+--   setup:
+--
+--   >>> :set -XOverloadedStrings
+--   >>> import Siphon (Siphon)
+--   >>> import Colonnade (Colonnade,Headed)
+--   >>> import qualified Siphon as S
+--   >>> import qualified Colonnade as C
+--   >>> import qualified Data.Text as T
+--   >>> import qualified Data.Text.Lazy.IO as LTIO
+--   >>> import qualified Data.Text.Lazy.Builder as LB
+--   >>> import Data.Text (Text)
+--   >>> import Data.Maybe (fromMaybe)
+--   >>> data Person = Person { name :: Text, age :: Int, company :: Maybe Text}
 module Siphon
-  ( Siphon
-  , SiphonError
-  , Indexed(..)
+  ( -- * Encode CSV
+    encodeCsv
+  , encodeCsvStream
+  , encodeCsvUtf8
+  , encodeCsvStreamUtf8
+    -- * Decode CSV
   , decodeHeadedUtf8Csv
-  , encodeHeadedUtf8Csv
-  , humanizeSiphonError
+    -- * Build Siphon
   , headed
   , headless
   , indexed
+    -- * Types
+  , Siphon
+  , SiphonError
+  , Indexed(..)
+    -- * Utility
+  , humanizeSiphonError
   ) where
 
 import Siphon.Types
@@ -32,6 +57,8 @@ import qualified Data.Vector as V
 import qualified Data.ByteString as B
 import qualified Data.ByteString.Lazy as LByteString
 import qualified Data.ByteString.Builder as Builder
+import qualified Data.Text.Lazy as LT
+import qualified Data.Text.Lazy.Builder as TB
 import qualified Data.Text as T
 import qualified Data.List as L
 import qualified Streaming as SM
@@ -39,9 +66,10 @@ import qualified Streaming.Prelude as SMP
 import qualified Data.Attoparsec.Types as ATYP
 import qualified Colonnade.Encode as CE
 import qualified Data.Vector.Mutable as MV
-
+import qualified Data.ByteString.Builder as BB
 
 import Control.Monad.Trans.Class
+import Data.Functor.Identity (Identity(..))
 import Data.ByteString.Builder (toLazyByteString,byteString)
 import Data.Attoparsec.ByteString.Char8 (char, endOfInput, string)
 import Data.Word (Word8)
@@ -53,6 +81,7 @@ import Data.Text.Encoding (decodeUtf8')
 import Streaming (Stream,Of(..))
 import Data.Vector.Mutable (MVector)
 import Control.Monad.ST
+import Data.Text (Text)
 
 newtype Escaped c = Escaped { getEscaped :: c }
 data Ended = EndedYes | EndedNo
@@ -74,40 +103,104 @@ decodeHeadedUtf8Csv headedSiphon s1 = do
         let requiredLength = V.length v
         consumeBodyUtf8 1 requiredLength ixedSiphon s2
 
-encodeHeadedUtf8Csv :: Monad m 
-  => CE.Colonnade CE.Headed a ByteString
+encodeCsvStreamUtf8 :: (Monad m, CE.Headedness h)
+  => CE.Colonnade h a ByteString
   -> Stream (Of a) m r
   -> Stream (Of ByteString) m r
-encodeHeadedUtf8Csv =
-  encodeHeadedCsv escapeChar8 (B.singleton comma) (B.singleton newline)
+encodeCsvStreamUtf8 =
+  encodeCsvInternal escapeChar8 (B.singleton comma) (B.singleton newline)
 
-encodeHeadedCsv :: Monad m
+encodeCsvStream :: (Monad m, CE.Headedness h)
+  => CE.Colonnade h a Text
+  -> Stream (Of a) m r
+  -> Stream (Of Text) m r
+encodeCsvStream =
+  encodeCsvInternal textEscapeChar8 (T.singleton ',') (T.singleton '\n')
+
+-- | Encode a collection to a CSV as a text 'TB.Builder'. For example,
+--   we can take the following columnar encoding of a person:
+--
+-- >>> :{
+-- let colPerson :: Colonnade Headed Person Text
+--     colPerson = mconcat
+--       [ C.headed "Name" name
+--       , C.headed "Age" (T.pack . show . age)
+--       , C.headed "Company" (fromMaybe "N/A" . company)
+--       ]
+-- :}
+--
+-- And we have the following people whom we wish to encode
+-- in this way:
+--
+-- >>> :{
+-- let people :: [Person]
+--     people =
+--       [ Person "Chao" 26 (Just "Tectonic, Inc.")
+--       , Person "Elsie" 41 (Just "Globex Corporation")
+--       , Person "Arabella" 19 Nothing
+--       ]
+-- :}
+--
+-- We pair the encoding with the rows to get a CSV:
+--
+-- >>> LTIO.putStr (TB.toLazyText (encodeCsv colPerson people))
+-- Name,Age,Company
+-- Chao,26,"Tectonic, Inc."
+-- Elsie,41,Globex Corporation
+-- Arabella,19,N/A
+encodeCsv :: (Foldable f, CE.Headedness h)
+  => CE.Colonnade h a Text -- ^ Tablular encoding
+  -> f a -- ^ Value of each row
+  -> TB.Builder
+encodeCsv enc = 
+  textStreamToBuilder . encodeCsvStream enc . SMP.each
+
+-- | Encode a collection to a CSV as a bytestring 'BB.Builder'.
+encodeCsvUtf8 :: (Foldable f, CE.Headedness h)
+  => CE.Colonnade h a ByteString -- ^ Tablular encoding
+  -> f a -- ^ Value of each row
+  -> BB.Builder
+encodeCsvUtf8 enc =
+  streamToBuilder . encodeCsvStreamUtf8 enc . SMP.each
+
+streamToBuilder :: Stream (Of ByteString) Identity () -> BB.Builder
+streamToBuilder s = SM.destroy s
+  (\(bs :> bb) -> BB.byteString bs <> bb) runIdentity (\() -> mempty)
+
+textStreamToBuilder :: Stream (Of Text) Identity () -> TB.Builder
+textStreamToBuilder s = SM.destroy s
+  (\(bs :> bb) -> TB.fromText bs <> bb) runIdentity (\() -> mempty)
+
+encodeCsvInternal :: (Monad m, CE.Headedness h)
   => (c -> Escaped c)
   -> c -- ^ separator
   -> c -- ^ newline
-  -> CE.Colonnade CE.Headed a c
+  -> CE.Colonnade h a c
   -> Stream (Of a) m r
   -> Stream (Of c) m r
-encodeHeadedCsv escapeFunc separatorStr newlineStr colonnade s = do
-  encodeHeader escapeFunc separatorStr newlineStr colonnade
+encodeCsvInternal escapeFunc separatorStr newlineStr colonnade s = do
+  case CE.headednessExtract of
+    Just toContent -> encodeHeader toContent escapeFunc separatorStr newlineStr colonnade
+    Nothing -> return ()
   encodeRows escapeFunc separatorStr newlineStr colonnade s
 
 encodeHeader :: Monad m
-  => (c -> Escaped c)
+  => (h c -> c)
+  -> (c -> Escaped c)
   -> c -- ^ separator
   -> c -- ^ newline
-  -> CE.Colonnade CE.Headed a c
+  -> CE.Colonnade h a c
   -> Stream (Of c) m ()
-encodeHeader escapeFunc separatorStr newlineStr colonnade = do
+encodeHeader toContent escapeFunc separatorStr newlineStr colonnade = do
   let (vs,ws) = V.splitAt 1 (CE.getColonnade colonnade)
   -- we only need to do this split because the first cell
   -- gets treated differently than the others. It does not
   -- get a separator added before it.
-  V.forM_ vs $ \(CE.OneColonnade (CE.Headed h) _) -> do
-    SMP.yield (getEscaped (escapeFunc h))
-  V.forM_ ws $ \(CE.OneColonnade (CE.Headed h) _) -> do
+  V.forM_ vs $ \(CE.OneColonnade h _) -> do
+    SMP.yield (getEscaped (escapeFunc (toContent h)))
+  V.forM_ ws $ \(CE.OneColonnade h _) -> do
     SMP.yield separatorStr
-    SMP.yield (getEscaped (escapeFunc h))
+    SMP.yield (getEscaped (escapeFunc (toContent h)))
   SMP.yield newlineStr
 
 mapStreamM :: Monad m
@@ -189,7 +282,12 @@ escapeChar8 t = case B.find (\c -> c == newline || c == cr || c == comma || c ==
   Nothing -> Escaped t
   Just _  -> escapeAlways t
 
--- | This implementation is definitely suboptimal.
+textEscapeChar8 :: Text -> Escaped Text
+textEscapeChar8 t = case T.find (\c -> c == '\n' || c == '\r' || c == ',' || c == '"') t of
+  Nothing -> Escaped t
+  Just _  -> textEscapeAlways t
+
+-- This implementation is definitely suboptimal.
 -- A better option (which would waste a little space
 -- but would be much faster) would be to build the
 -- new bytestring by writing to a buffer directly.
@@ -205,19 +303,18 @@ escapeAlways t = Escaped $ LByteString.toStrict $ Builder.toLazyByteString $
       t
   <> Builder.word8 doubleQuote
 
--- | Specialized version of 'sepBy1'' which is faster due to not
--- accepting an arbitrary separator.
-sepByDelim1' :: AL.Parser a
-             -> Word8  -- ^ Field delimiter
-             -> AL.Parser [a]
-sepByDelim1' p !delim = liftM2' (:) p loop
-  where
-    loop = do
-        mb <- A.peekWord8
-        case mb of
-            Just b | b == delim -> liftM2' (:) (A.anyWord8 *> p) loop
-            _                   -> pure []
-{-# INLINE sepByDelim1' #-}
+-- Suboptimal for similar reason as escapeAlways.
+textEscapeAlways :: Text -> Escaped Text
+textEscapeAlways t = Escaped $ LT.toStrict $ TB.toLazyText $
+     TB.singleton '"'
+  <> T.foldl
+      (\ acc b -> acc <> if b == '"'
+          then TB.fromString "\"\""
+          else TB.singleton b
+      )
+      mempty
+      t
+  <> TB.singleton '"'
 
 -- | Parse a record, not including the terminating line separator. The
 -- terminating line separate is not included as the last record in a
@@ -352,13 +449,6 @@ liftM2' f a b = do
     return (f x y)
 {-# INLINE liftM2' #-}
 
-
--- | Match either a single newline character @\'\\n\'@, or a carriage
--- return followed by a newline character @\"\\r\\n\"@, or a single
--- carriage return @\'\\r\'@.
-endOfLine :: A.Parser ()
-endOfLine = (A.word8 newline *> return ()) <|> (string (BC8.pack "\r\n") *> return ()) <|> (A.word8 cr *> return ())
-{-# INLINE endOfLine #-}
 
 doubleQuote, newline, cr, comma :: Word8
 doubleQuote = 34
@@ -665,4 +755,21 @@ headed h f = SiphonAp (CE.Headed h) f (SiphonPure id)
 
 indexed :: Int -> (c -> Maybe a) -> Siphon Indexed c a
 indexed ix f = SiphonAp (Indexed ix) f (SiphonPure id)
+
+-- $setup
+--
+-- This code is copied from the head section. It has to be
+-- run before every set of tests.
+--
+-- >>> :set -XOverloadedStrings
+-- >>> import Siphon (Siphon)
+-- >>> import Colonnade (Colonnade,Headed)
+-- >>> import qualified Siphon as S
+-- >>> import qualified Colonnade as C
+-- >>> import qualified Data.Text as T
+-- >>> import Data.Text (Text)
+-- >>> import qualified Data.Text.Lazy.IO as LTIO
+-- >>> import qualified Data.Text.Lazy.Builder as LB
+-- >>> import Data.Maybe (fromMaybe)
+-- >>> data Person = Person { name :: Text, age :: Int, company :: Maybe Text}
 

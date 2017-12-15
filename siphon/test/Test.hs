@@ -43,7 +43,7 @@ tests =
   [ testGroup "ByteString encode/decode"
     [ testCase "Headed Encoding (int,char,bool)"
         $ runTestScenario [(4,'c',False)]
-            S.encodeHeadedUtf8Csv
+            S.encodeCsvStreamUtf8
             encodingB
             $ ByteString.concat
               [ "number,letter,boolean\n"
@@ -51,7 +51,7 @@ tests =
               ]
     , testCase "Headed Encoding (int,char,bool) monoidal building"
         $ runTestScenario [(4,'c',False)]
-            S.encodeHeadedUtf8Csv
+            S.encodeCsvStreamUtf8
             encodingC
             $ ByteString.concat
               [ "boolean,letter\n"
@@ -59,7 +59,7 @@ tests =
               ]
     , testCase "Headed Encoding (escaped characters)"
         $ runTestScenario ["bob","there,be,commas","the \" quote"]
-            S.encodeHeadedUtf8Csv
+            S.encodeCsvStreamUtf8
             encodingF
             $ ByteString.concat
               [ "name\n"
@@ -99,7 +99,7 @@ tests =
     , testProperty "Headed Isomorphism (int,char,bool)"
         $ propIsoStream BC8.unpack
           (S.decodeHeadedUtf8Csv decodingB)
-          (S.encodeHeadedUtf8Csv encodingB)
+          (S.encodeCsvStreamUtf8 encodingB)
     ]
   ]
 
