@@ -110,6 +110,9 @@ encodeCsvStreamUtf8 :: (Monad m, CE.Headedness h)
 encodeCsvStreamUtf8 =
   encodeCsvInternal escapeChar8 (B.singleton comma) (B.singleton newline)
 
+-- | Streaming variant of 'encodeCsv'. This is particularly useful
+--   when you need to produce millions of rows without having them
+--   all loaded into memory at the same time.
 encodeCsvStream :: (Monad m, CE.Headedness h)
   => CE.Colonnade h a Text
   -> Stream (Of a) m r
@@ -747,12 +750,17 @@ maxIndex = go 0 where
   go !ix1 (SiphonAp (IndexedHeader ix2 _) _ apNext) =
     go (max ix1 ix2) apNext
 
+-- | Uses the argument to parse a CSV column.
 headless :: (c -> Maybe a) -> Siphon CE.Headless c a
 headless f = SiphonAp CE.Headless f (SiphonPure id)
 
+-- | Uses the second argument to parse a CSV column whose 
+--   header content matches the first column exactly.
 headed :: c -> (c -> Maybe a) -> Siphon CE.Headed c a
 headed h f = SiphonAp (CE.Headed h) f (SiphonPure id)
 
+-- | Uses the second argument to parse a CSV column that
+--   is positioned at the index given by the first argument.
 indexed :: Int -> (c -> Maybe a) -> Siphon Indexed c a
 indexed ix f = SiphonAp (Indexed ix) f (SiphonPure id)
 
