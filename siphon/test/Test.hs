@@ -69,7 +69,7 @@ tests =
               ]
     , testCase "Headed Decoding (int,char,bool)"
         $ ( runIdentity . SMP.toList )
-            ( S.decodeHeadedUtf8Csv decodingB
+            ( S.decodeCsvUtf8 decodingB
               ( mapM_ (SMP.yield . BC8.singleton) $ concat
                 [ "number,letter,boolean\n"
                 , "244,z,true\n"
@@ -78,7 +78,7 @@ tests =
             ) @?= ([(244,'z',True)] :> Nothing)
     , testCase "Headed Decoding (escaped characters, one big chunk)"
         $ ( runIdentity . SMP.toList )
-            ( S.decodeHeadedUtf8Csv decodingF
+            ( S.decodeCsvUtf8 decodingF
               ( SMP.yield $ BC8.pack $ concat
                 [ "name\n"
                 , "drew\n"
@@ -88,7 +88,7 @@ tests =
             ) @?= (["drew","martin, drew"] :> Nothing)
     , testCase "Headed Decoding (escaped characters, character per chunk)"
         $ ( runIdentity . SMP.toList )
-            ( S.decodeHeadedUtf8Csv decodingF
+            ( S.decodeCsvUtf8 decodingF
               ( mapM_ (SMP.yield . BC8.singleton) $ concat
                 [ "name\n"
                 , "drew\n"
@@ -98,7 +98,7 @@ tests =
             ) @?= (["drew","martin, drew"] :> Nothing)
     , testProperty "Headed Isomorphism (int,char,bool)"
         $ propIsoStream BC8.unpack
-          (S.decodeHeadedUtf8Csv decodingB)
+          (S.decodeCsvUtf8 decodingB)
           (S.encodeCsvStreamUtf8 encodingB)
     ]
   ]

@@ -8,20 +8,8 @@
 -- | Build CSVs using the abstractions provided in the @colonnade@ library, and 
 --   parse CSVs using 'Siphon', which is the dual of 'Colonnade'.
 --   Read the documentation for @colonnade@ before reading the documentation
---   for @siphon@. All of the examples on this page assume the following
---   setup:
---
---   >>> :set -XOverloadedStrings
---   >>> import Siphon (Siphon)
---   >>> import Colonnade (Colonnade,Headed)
---   >>> import qualified Siphon as S
---   >>> import qualified Colonnade as C
---   >>> import qualified Data.Text as T
---   >>> import qualified Data.Text.Lazy.IO as LTIO
---   >>> import qualified Data.Text.Lazy.Builder as LB
---   >>> import Data.Text (Text)
---   >>> import Data.Maybe (fromMaybe)
---   >>> data Person = Person { name :: Text, age :: Int, company :: Maybe Text}
+--   for @siphon@. All of the examples on this page assume a common set of
+--   imports that are provided at the bottom of this page.
 module Siphon
   ( -- * Encode CSV
     encodeCsv
@@ -29,7 +17,7 @@ module Siphon
   , encodeCsvUtf8
   , encodeCsvStreamUtf8
     -- * Decode CSV
-  , decodeHeadedUtf8Csv
+  , decodeCsvUtf8
     -- * Build Siphon
   , headed
   , headless
@@ -40,6 +28,8 @@ module Siphon
   , Indexed(..)
     -- * Utility
   , humanizeSiphonError
+    -- * Imports
+    -- $setup
   ) where
 
 import Siphon.Types
@@ -89,11 +79,11 @@ data Ended = EndedYes | EndedNo
 data CellResult c = CellResultData !c | CellResultNewline !c !Ended
   deriving (Show)
 
-decodeHeadedUtf8Csv :: Monad m 
+decodeCsvUtf8 :: Monad m 
   => Siphon CE.Headed ByteString a
   -> Stream (Of ByteString) m () -- ^ encoded csv
   -> Stream (Of a) m (Maybe SiphonError)
-decodeHeadedUtf8Csv headedSiphon s1 = do
+decodeCsvUtf8 headedSiphon s1 = do
   e <- lift (consumeHeaderRowUtf8 s1)
   case e of
     Left err -> return (Just err)
@@ -351,7 +341,7 @@ field !delim = do
   case mb of
     Just b
       | b == doubleQuote -> do
-          (bs,tc) <- escapedField delim
+          (bs,tc) <- escapedField
           case tc of
             TrailCharComma -> return (CellResultData bs)
             TrailCharNewline -> return (CellResultNewline bs EndedNo)
@@ -374,8 +364,8 @@ field !delim = do
 eatNewlines :: AL.Parser S.ByteString
 eatNewlines = A.takeWhile (\x -> x == 10 || x == 13)
 
-escapedField :: Word8 -> AL.Parser (S.ByteString,TrailChar)
-escapedField !delim = do
+escapedField :: AL.Parser (S.ByteString,TrailChar)
+escapedField = do
   _ <- dquote
   -- The scan state is 'True' if the previous character was a double
   -- quote.  We need to drop a trailing double quote left by scan.
@@ -442,16 +432,6 @@ unescape = (LByteString.toStrict . toLazyByteString) <$!> go mempty where
 -- | Is this an empty record (i.e. a blank line)?
 blankLine :: V.Vector B.ByteString -> Bool
 blankLine v = V.length v == 1 && (B.null (V.head v))
-
--- | A version of 'liftM2' that is strict in the result of its first
--- action.
-liftM2' :: (Monad m) => (a -> b -> c) -> m a -> m b -> m c
-liftM2' f a b = do
-    !x <- a
-    y <- b
-    return (f x y)
-{-# INLINE liftM2' #-}
-
 
 doubleQuote, newline, cr, comma :: Word8
 doubleQuote = 34
