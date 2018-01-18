@@ -10,6 +10,8 @@ description:
   that provides (1) a content type and (2) functions for feeding
   data into a columnar encoding:
   .
+  * <https://hackage.haskell.org/package/lucid-colonnade lucid-colonnade> for `lucid` html tables
+  .
   * <https://hackage.haskell.org/package/blaze-colonnade blaze-colonnade> for `blaze` html tables
   .
   * <https://hackage.haskell.org/package/reflex-dom-colonnade reflex-dom-colonnade> for reactive `reflex-dom` tables
