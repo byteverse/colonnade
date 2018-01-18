@@ -319,11 +319,12 @@ textEscapeAlways t = Escaped $ LT.toStrict $ TB.toLazyText $
       t
   <> TB.singleton '"'
 
--- | Parse a record, not including the terminating line separator. The
+-- Parse a record, not including the terminating line separator. The
 -- terminating line separate is not included as the last record in a
 -- CSV file is allowed to not have a terminating line separator. You
 -- most likely want to use the 'endOfLine' parser in combination with
 -- this parser.
+--
 -- row :: Word8  -- ^ Field delimiter
 --     -> AL.Parser (Vector ByteString)
 -- row !delim = rowNoNewline delim <* endOfLine
@@ -336,6 +337,7 @@ textEscapeAlways t = Escaped $ LT.toStrict $ TB.toLazyText $
 -- 
 -- removeBlankLines :: [Vector ByteString] -> [Vector ByteString]
 -- removeBlankLines = filter (not . blankLine)
+
 
 -- | Parse a field. The field may be in either the escaped or
 --   non-escaped format. The return value is unescaped. This
