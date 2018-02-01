@@ -15,10 +15,8 @@ module Yesod.Colonnade
   , anchorCell
   , anchorWidget
     -- * Apply
-  , encodeHeadedWidgetTable
-  , encodeHeadlessWidgetTable
-  , encodeHeadedCellTable
-  , encodeHeadlessCellTable
+  , encodeWidgetTable
+  , encodeCellTable
   , encodeDefinitionTable
   , encodeListItems
   ) where
@@ -126,41 +124,27 @@ encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $
       widgetFromCell td_ theValue
     ) a
 
--- | If you are using the bootstrap css framework, then you may want
+-- | Encode an html table with attributes on the table cells.
+--   If you are using the bootstrap css framework, then you may want
 --   to call this with the first argument as:
 --
---   > encodeHeadedCellTable (HA.class_ "table table-striped") ...
-encodeHeadedCellTable :: Foldable f
+--   > encodeCellTable (HA.class_ "table table-striped") ...
+encodeCellTable :: (Foldable f, E.Headedness h)
   => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headed a (Cell site) -- ^ How to encode data as a row
+  -> Colonnade h a (Cell site) -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
-encodeHeadedCellTable = encodeTable
-  (E.Headed mempty) mempty (const mempty) widgetFromCell 
+encodeCellTable = encodeTable
+  (E.headednessPure mempty) mempty (const mempty) widgetFromCell 
 
-encodeHeadlessCellTable :: Foldable f
-  => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headless a (Cell site) -- ^ How to encode data as columns
-  -> f a -- ^ Rows of data
-  -> WidgetT site IO ()
-encodeHeadlessCellTable = encodeTable
-  E.Headless mempty (const mempty) widgetFromCell 
-
-encodeHeadedWidgetTable :: Foldable f
-  => Attribute -- ^ Attributes of @table@ element
-  -> Colonnade Headed a (WidgetT site IO ()) -- ^ How to encode data as columns
-  -> f a -- ^ Rows of data
-  -> WidgetT site IO ()
-encodeHeadedWidgetTable = encodeTable
-  (E.Headed mempty) mempty (const mempty) ($ mempty)
-
-encodeHeadlessWidgetTable :: Foldable f
+-- | Encode an html table.
+encodeWidgetTable :: (Foldable f, E.Headedness h)
   => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade Headless a (WidgetT site IO ()) -- ^ How to encode data as columns
+  -> Colonnade h a (WidgetT site IO ()) -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
   -> WidgetT site IO ()
-encodeHeadlessWidgetTable = encodeTable
-  E.Headless mempty (const mempty) ($ mempty) 
+encodeWidgetTable = encodeTable
+  (E.headednessPure mempty) mempty (const mempty) ($ mempty) 
 
 -- | Encode a table. This handles a very general case and
 --   is seldom needed by users. One of the arguments provided is
