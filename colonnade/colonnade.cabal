@@ -2,7 +2,7 @@ name:                colonnade
 version:             1.2.0
 synopsis:            Generic types and functions for columnar encoding and decoding
 description:
-  The `colonnade` package provides a way to to talk about
+  The `colonnade` package provides a way to talk about
   columnar encodings and decodings of data. This package provides
   very general types and does not provide a way for the end-user
   to actually apply the columnar encodings they build to data.
