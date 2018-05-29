@@ -1,5 +1,5 @@
 name:                blaze-colonnade
-version:             1.2.0
+version:             1.2.1
 synopsis:            Helper functions for using blaze-html with colonnade
 description:         Blaze HTML and colonnade
 homepage:            https://github.com/andrewthad/colonnade#readme

@@ -53,7 +53,8 @@ import Text.Blaze.Html (Html, toHtml)
 import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice)
 import Data.Text (Text)
 import Control.Monad
-import Data.Monoid
+import Data.Semigroup
+import Data.Monoid hiding ((<>))
 import Data.Foldable
 import Data.String (IsString(..))
 import Data.Maybe (listToMaybe)
@@ -266,9 +267,12 @@ data Cell = Cell
 instance IsString Cell where
   fromString = stringCell
 
+instance Semigroup Cell where
+  (Cell a1 c1) <> (Cell a2 c2) = Cell (a1 <> a2) (c1 <> c2)
+
 instance Monoid Cell where
   mempty = Cell mempty mempty
-  mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (mappend c1 c2)
+  mappend = (<>)
 
 -- | Create a 'Cell' from a 'Widget'
 htmlCell :: Html -> Cell
