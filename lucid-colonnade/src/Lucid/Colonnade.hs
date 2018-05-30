@@ -30,7 +30,8 @@ module Lucid.Colonnade
 import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice)
 import Data.Text (Text)
 import Control.Monad
-import Data.Monoid
+import Data.Semigroup
+import Data.Monoid hiding ((<>))
 import Data.Foldable
 import Data.String (IsString(..))
 import Data.Maybe (listToMaybe)
@@ -61,6 +62,9 @@ data Cell d = Cell
 
 instance (d ~ ()) => IsString (Cell d) where
   fromString = stringCell
+
+instance Semigroup d => Semigroup (Cell d) where
+  Cell a1 c1 <> Cell a2 c2 = Cell (mappend a1 a2) (liftA2 (<>) c1 c2)
 
 instance Monoid d => Monoid (Cell d) where
   mempty = Cell mempty (return mempty)

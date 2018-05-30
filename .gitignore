@@ -30,3 +30,4 @@ colonnade/result
 reflex-dom-colonnade/result
 siphon-0.8.0-docs.tar.gz
 siphon-0.8.0-docs/
+.ghc.environment.*
