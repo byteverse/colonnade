@@ -1,15 +1,13 @@
-resolver: lts-10.4
+resolver: lts-11.11
 packages:
 - 'colonnade'
-- 'yesod-colonnade'
 - 'blaze-colonnade'
 - 'lucid-colonnade'
 - 'siphon'
+# - 'yesod-colonnade'
 # - 'geolite-csv'
 # Dependency packages to be pulled from upstream that are not in the resolver
 # (e.g., acme-missiles-0.3)
-extra-deps:
-- 'ip-0.9'
 
 # Override default flag values for local packages and extra-deps
 flags: {}
