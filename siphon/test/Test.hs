@@ -23,12 +23,15 @@ import Data.Profunctor (lmap)
 import Streaming (Stream,Of(..))
 import Control.Exception
 import Debug.Trace
-import qualified Data.Text                  as Text
-import qualified Data.ByteString.Builder    as Builder
-import qualified Data.ByteString.Lazy       as LByteString
-import qualified Data.ByteString            as ByteString
-import qualified Data.ByteString.Char8      as BC8
-import qualified Colonnade                  as Colonnade
+import Data.Word (Word8)
+import Data.Char (ord)
+import qualified Data.Text as Text
+import qualified Data.ByteString.Builder as Builder
+import qualified Data.ByteString.Lazy as LByteString
+import qualified Data.ByteString as ByteString
+import qualified Data.ByteString.Char8 as BC8
+import qualified Data.ByteString as B
+import qualified Colonnade as Colonnade
 import qualified Siphon as S
 import qualified Streaming.Prelude as SMP
 import qualified Data.Text.Lazy as LText
@@ -42,7 +45,7 @@ tests :: [Test]
 tests =
   [ testGroup "ByteString encode/decode"
     [ testCase "Headed Encoding (int,char,bool)"
-        $ runTestScenario [(4,'c',False)]
+        $ runTestScenario [(4,intToWord8 (ord 'c'),False)]
             S.encodeCsvStreamUtf8
             encodingB
             $ ByteString.concat
@@ -75,7 +78,7 @@ tests =
                 , "244,z,true\n"
                 ]
               )
-            ) @?= ([(244,'z',True)] :> Nothing)
+            ) @?= ([(244,intToWord8 (ord 'z'),True)] :> Nothing)
     , testCase "Headed Decoding (escaped characters, one big chunk)"
         $ ( runIdentity . SMP.toList )
             ( S.decodeCsvUtf8 decodingF
@@ -102,6 +105,9 @@ tests =
           (S.encodeCsvStreamUtf8 encodingB)
     ]
   ]
+
+intToWord8 :: Int -> Word8
+intToWord8 = fromIntegral
 
 data Foo = FooA | FooB | FooC
   deriving (Generic,Eq,Ord,Show,Read,Bounded,Enum)
@@ -134,10 +140,10 @@ decodingA = (,,)
   <*> S.headless dbChar
   <*> S.headless dbBool
 
-decodingB :: Siphon Headed ByteString (Int,Char,Bool)
+decodingB :: Siphon Headed ByteString (Int,Word8,Bool)
 decodingB = (,,)
   <$> S.headed "number" dbInt
-  <*> S.headed "letter" dbChar
+  <*> S.headed "letter" dbWord8
   <*> S.headed "boolean" dbBool
 
 decodingF :: Siphon Headed ByteString ByteString
@@ -174,10 +180,10 @@ decodingY = (,,)
 encodingF :: Colonnade Headed ByteString ByteString
 encodingF = headed "name" id
 
-encodingB :: Colonnade Headed (Int,Char,Bool) ByteString
+encodingB :: Colonnade Headed (Int,Word8,Bool) ByteString
 encodingB = mconcat
   [ lmap fst3 (headed "number" ebInt)
-  , lmap snd3 (headed "letter" ebChar)
+  , lmap snd3 (headed "letter" ebWord8)
   , lmap thd3 (headed "boolean" ebBool)
   ]
 
@@ -263,6 +269,11 @@ dbChar b = case BC8.length b of
   1 -> Just (BC8.head b)
   _ -> Nothing
 
+dbWord8 :: ByteString -> Maybe Word8
+dbWord8 b = case B.length b of
+  1 -> Just (B.head b)
+  _ -> Nothing
+
 dbInt :: ByteString -> Maybe Int
 dbInt b = do
   (a,bsRem) <- BC8.readInt b
@@ -278,6 +289,9 @@ dbBool b
 
 ebChar :: Char -> ByteString
 ebChar = BC8.singleton
+
+ebWord8 :: Word8 -> ByteString
+ebWord8 = B.singleton
 
 ebInt :: Int -> ByteString
 ebInt = LByteString.toStrict

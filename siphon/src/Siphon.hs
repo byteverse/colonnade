@@ -57,6 +57,7 @@ import qualified Data.Attoparsec.Types as ATYP
 import qualified Colonnade.Encode as CE
 import qualified Data.Vector.Mutable as MV
 import qualified Data.ByteString.Builder as BB
+import qualified Data.Semigroup as SG
 
 import Control.Monad.Trans.Class
 import Data.Functor.Identity (Identity(..))
@@ -72,6 +73,7 @@ import Streaming (Stream,Of(..))
 import Data.Vector.Mutable (MVector)
 import Control.Monad.ST
 import Data.Text (Text)
+import Data.Semigroup (Semigroup)
 
 newtype Escaped c = Escaped { getEscaped :: c }
 data Ended = EndedYes | EndedNo
@@ -258,10 +260,13 @@ headedToIndexed toStr v =
 
 data HeaderErrors = HeaderErrors !(Vector (Vector CellError)) !(Vector T.Text) !(Vector Int)
 
+instance Semigroup HeaderErrors where
+  HeaderErrors a1 b1 c1 <> HeaderErrors a2 b2 c2 = HeaderErrors
+    (mappend a1 a2) (mappend b1 b2) (mappend c1 c2)
+
 instance Monoid HeaderErrors where
   mempty = HeaderErrors mempty mempty mempty
-  mappend (HeaderErrors a1 b1 c1) (HeaderErrors a2 b2 c2) = HeaderErrors
-    (mappend a1 a2) (mappend b1 b2) (mappend c1 c2)
+  mappend = (SG.<>)
 
 -- byteStringChar8 :: Siphon ByteString
 -- byteStringChar8 = Siphon
@@ -533,7 +538,7 @@ mapLeft f (Left a) = Left (f a)
 consumeHeaderRowUtf8 :: Monad m
   => Stream (Of ByteString) m ()
   -> m (Either SiphonError (Of (Vector ByteString) (Stream (Of ByteString) m ())))
-consumeHeaderRowUtf8 = consumeHeaderRow utf8ToStr (A.parse (field comma)) B.null B.empty (\() -> True)
+consumeHeaderRowUtf8 = consumeHeaderRow (A.parse (field comma)) B.null B.empty (\() -> True)
 
 consumeBodyUtf8 :: forall m a. Monad m
   => Int -- ^ index of first row, usually zero or one
@@ -548,14 +553,13 @@ utf8ToStr :: ByteString -> T.Text
 utf8ToStr = either (\_ -> T.empty) id . decodeUtf8'
 
 consumeHeaderRow :: forall m r c. Monad m
-  => (c -> T.Text)
-  -> (c -> ATYP.IResult c (CellResult c))
+  => (c -> ATYP.IResult c (CellResult c))
   -> (c -> Bool) -- ^ true if null string
   -> c
   -> (r -> Bool) -- ^ true if termination is acceptable
   -> Stream (Of c) m r
   -> m (Either SiphonError (Of (Vector c) (Stream (Of c) m r)))
-consumeHeaderRow toStr parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
+consumeHeaderRow parseCell isNull emptyStr isGood s0 = go 0 StrictListNil s0
   where
   go :: Int
      -> StrictList c
