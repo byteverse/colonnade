@@ -24,7 +24,7 @@ module Siphon
   , indexed
     -- * Types
   , Siphon
-  , SiphonError
+  , SiphonError(..)
   , Indexed(..)
     -- * Utility
   , humanizeSiphonError
