@@ -290,6 +290,26 @@ bodyResizable bodyAttrs trAttrs colonnade collection = elDynAttr "tbody" bodyAtt
             content = cellularContents c
          in WrappedApplicative (elDynAttr "td" (zipDynWith setColspanOrHide dynSize cattr) content)) a
 
+bodyResizableLazy :: forall m t c e a f h. (Cellular t m c, DomBuilder t m, PostBuild t m, Foldable f, MonadHold t m, MonadSample t m, MonadFix m, Monoid e)
+  => Dynamic t (Map Text Text)
+  -> (a -> Dynamic t (Map Text Text))
+  -> Colonnade (Resizable t h) a (c e)
+  -> f a
+  -> m ()
+bodyResizableLazy bodyAttrs trAttrs colonnade collection = do
+  let sizeVec = V.map (resizableSize . E.oneColonnadeHead) (E.getColonnade colonnade)
+  let sizeVecD = fmap V.fromList (distributeListOverDynPure (V.toList sizeVec))
+  sizeVec0 <- sample (current sizeVecD)
+  largestSizes <- foldDynMaybe
+    ( \incoming largest ->
+      let v = V.zipWith max incoming largest
+       in if v == largest then Nothing else Just v
+    ) sizeVec0 (updated sizeVecD)
+  _ <- dyn $ flip fmap largestSizes $ \s -> do
+    let colonnade' = E.Colonnade (V.map snd (V.filter (\(sz,_) -> sz > 0) (V.zip s (E.getColonnade colonnade))))
+    bodyResizable bodyAttrs trAttrs colonnade' collection
+  return ()
+
 setColspanOrHide :: Int -> Map Text Text -> Map Text Text
 setColspanOrHide i m
   | i < 1 = M.insertWith T.append "style" "display:none;" m
@@ -420,7 +440,7 @@ capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
 --   useful, but it can be helpful if the table footer needs to be
 --   given a @colspan@ that matches the number of visible columns.
 cappedResizable :: 
-     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
+     (MonadWidget t m, Foldable f, Monoid e)
   => Map Text Text -- ^ @\<table\>@ tag attributes
   -> Map Text Text -- ^ @\<thead\>@ tag attributes
   -> Map Text Text -- ^ @\<tbody\>@ tag attributes
@@ -429,48 +449,48 @@ cappedResizable ::
   -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
   -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
-  -> m (e, c, Dynamic t Int)
+  -> m (c, Dynamic t Int)
 cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornice collection = do
   elAttr "table" tableAttrs $ do
     let annCornice = dynamicAnnotate cornice
-    h <- encodeCorniceResizableHead headAttrs fascia annCornice
-    b <- bodyResizable (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
+    _ <- encodeCorniceResizableHead headAttrs fascia annCornice
+    bodyResizableLazy (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
     c <- beneathBody
-    return (h `mappend` b, c, E.size annCornice)
+    return (c, E.size annCornice)
 
 -- | Same as 'cappedResizable' but without the @\<table\>@ wrapping it.
 --   Also, it does not take extra content to go beneath the @\<tbody\>@.
 cappedResizableTableless :: 
-     (DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e)
+     (MonadWidget t m, Foldable f, Monoid e)
   => Map Text Text -- ^ @\<thead\>@ tag attributes
   -> Map Text Text -- ^ @\<tbody\>@ tag attributes
   -> (a -> Map Text Text) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
   -> Cornice (Resizable t Headed) p a (Cell t m e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
-  -> m (e, Dynamic t Int)
+  -> m (Dynamic t Int)
 cappedResizableTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
   let annCornice = dynamicAnnotate cornice
-  h <- encodeCorniceResizableHead headAttrs fascia annCornice
-  b <- bodyResizable (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
-  return (h `mappend` b, E.size annCornice)
+  _ <- encodeCorniceResizableHead headAttrs fascia annCornice
+  bodyResizableLazy (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
+  return (E.size annCornice)
 
 cappedTableless :: 
-     (Headedness b, Sizable t b h, DomBuilder t m, PostBuild t m, MonadHold t m, Foldable f, Monoid e, Cellular t m c)
+     (Headedness b, Sizable t b h, MonadWidget t m, Foldable f, Monoid e, Cellular t m c)
   => Dynamic t (Map Text Text) -- ^ @\<thead\>@ tag attributes
   -> Dynamic t (Map Text Text) -- ^ @\<tbody\>@ tag attributes
   -> (a -> Dynamic t (Map Text Text)) -- ^ @\<tr\>@ tag attributes
   -> Fascia p (Map Text Text) -- ^ Attributes for @\<tr\>@ elements in the @\<thead\>@
   -> Cornice h p a (c e) -- ^ Data encoding strategy
   -> f a -- ^ Collection of data
-  -> m (e, Dynamic t Int)
+  -> m (Dynamic t Int)
 cappedTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
   let annCornice = dynamicAnnotateGeneral cornice
-  h <- encodeCorniceHeadGeneral headAttrs fascia annCornice
-  b <- bodyResizable bodyAttrs trAttrs
+  _ <- encodeCorniceHeadGeneral headAttrs fascia annCornice
+  bodyResizableLazy bodyAttrs trAttrs
     (C.mapHeadedness sizedToResizable (E.uncapAnnotated annCornice))
     collection
-  return (h `mappend` b, E.size annCornice)
+  return (E.size annCornice)
  
 sizedToResizable :: E.Sized (Dynamic t Int) h a -> Resizable t h a
 sizedToResizable (E.Sized sz h) = Resizable sz h
@@ -694,14 +714,65 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       return e
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
 
+-- dynAfter :: forall t m a b. MonadWidget t m => Event t a -> (Dynamic t a -> m (Event t b)) -> m (Event t b)
+-- dynAfter e f = do
+--   e1 <- headE e
+--   let em1 = fmap (\a1 -> holdDyn a1 e >>= f) e1
+--   de <- widgetHold (return never) em1
+--   return (switch (current de))
+
+-- paginatedCappedLazy :: forall t b h m a c p e.
+--      (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, MonadHold t m, Monoid e)
+--   => Chest p t a
+--   -> Pagination t m -- ^ pagination settings
+--   -> Cornice h p (Dynamic t a) (c e) -- ^ Data encoding strategy
+--   -> Event t (Vector a) -- ^ table row data
+--   -> m e
+-- paginatedCappedLazy (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) col vecE = do
+--   let vecE' = fmapMaybe (not . V.null) vecE
+--   dynAfter vecE' $ \vecD -> do
+--     -- note: vec0 is guaranteed to be non-empty
+--     vec0 <- sample (current vecD)
+--     let aDef = vec0 V.! aDef
+--         colLifted :: Cornice h p (Dynamic t (Visible a)) (c e)
+--         colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
+--         makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
+--         makeVals page = V.generate pageSize $ \ix -> do
+--           p <- page
+--           v <- vecD
+--           return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+--         totalPages :: Dynamic t Int
+--         totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
+--         hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
+--         hideWhenUnipage = zipDynWith
+--           ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
+--           ) totalPages
+--         trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
+--         trAttrsLifted d = do
+--           Visible isVisible a <- d
+--           attrs <- trAttrs a
+--           return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+--     elDynAttr "table" tableAttrs $ case arrange of
+--       ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
+--         let vals = makeVals page
+--         (e, size) <- cappedTableless theadAttrs bodyAttrs trAttrsLifted fascia colLifted vals
+--         page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
+--           elDynAttr "tr" tfootTrAttrs $ do
+--             let attrs = zipDynWith insertSizeAttr size tfootThAttrs
+--             elDynAttr "th" attrs $ do
+--               makePagination totalPages
+--         return e
+--       _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
+  
+
 paginatedCapped :: forall t b h m a c p e.
-     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, MonadHold t m, Monoid e)
+     (Sizable t b h, Cellular t m c, Headedness b, Functor h, Monoid e, MonadWidget t m)
   => Chest p t a
   -> Pagination t m -- ^ pagination settings
   -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
   -> Cornice h p (Dynamic t a) (c e) -- ^ Data encoding strategy
   -> Dynamic t (Vector a) -- ^ table row data
-  -> m e
+  -> m ()
 paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef col vecD = do
   let colLifted :: Cornice h p (Dynamic t (Visible a)) (c e)
       colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
@@ -724,13 +795,13 @@ paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Paginati
   elDynAttr "table" tableAttrs $ case arrange of
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
       let vals = makeVals page
-      (e, size) <- cappedTableless theadAttrs bodyAttrs trAttrsLifted fascia colLifted vals
+      size <- cappedTableless theadAttrs bodyAttrs trAttrsLifted fascia colLifted vals
       page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
         elDynAttr "tr" tfootTrAttrs $ do
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return e
+      return ()
     _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
       
 
