@@ -32,6 +32,8 @@ import Data.String (IsString(..))
 import Text.Blaze (Attribute,toValue)
 import Data.Foldable
 import Yesod.Elements (table_,thead_,tbody_,tr_,td_,th_,ul_,li_,a_)
+import Data.Semigroup (Semigroup)
+import qualified Data.Semigroup as SG
 import qualified Text.Blaze.Html5.Attributes as HA
 import qualified Text.Blaze.Html5 as H
 import qualified Colonnade.Encode as E
@@ -53,7 +55,7 @@ instance Semigroup (Cell site) where
   Cell a1 c1 <> Cell a2 c2 = Cell (mappend a1 a2) (mappend c1 c2)
 instance Monoid (Cell site) where
   mempty = Cell mempty mempty
-  mappend = (<>)
+  mappend = (SG.<>)
 
 -- | Create a 'Cell' from a 'Widget'
 cell :: WidgetFor site () -> Cell site
