@@ -22,10 +22,11 @@ module Yesod.Colonnade
   ) where
 
 import Yesod.Core
-import Yesod.Core.Types (Body(..),GWData(..),WidgetT(..))
+import Yesod.Core.Types (Body(..),GWData(..),WidgetFor(..),wdRef)
 import Colonnade (Colonnade,Headed,Headless)
 import Data.Text (Text)
 import Control.Monad
+import Data.IORef (modifyIORef')
 import Data.Monoid
 import Data.String (IsString(..))
 import Text.Blaze (Attribute,toValue)
@@ -47,9 +48,11 @@ data Cell site = Cell
 instance IsString (Cell site) where
   fromString = stringCell
 
+instance Semigroup (Cell site) where
+  Cell a1 c1 <> Cell a2 c2 = Cell (mappend a1 a2) (mappend c1 c2)
 instance Monoid (Cell site) where
   mempty = Cell mempty mempty
-  mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (mappend c1 c2)
+  mappend = (<>)
 
 -- | Create a 'Cell' from a 'Widget'
 cell :: WidgetT site IO () -> Cell site
@@ -189,12 +192,14 @@ li_ = liftParent H.li
 a_ = liftParent H.a
 
 liftParent :: (Html -> Html) -> Attribute -> WidgetT site IO a -> WidgetT site IO a
-liftParent el attrs (WidgetT f) = WidgetT $ \hdata -> do
-  (a,gwd) <- f hdata
-  let Body bodyFunc = gwdBody gwd
-      newBodyFunc render =
-        el H.! attrs $ (bodyFunc render)
-  return (a,gwd { gwdBody = Body newBodyFunc })
+liftParent el attrs (WidgetFor f) = WidgetFor $ \hdata -> do
+  a <- f hdata
+  modifyIORef' (wdRef hdata) $ \gwd ->
+    let Body bodyFunc = gwdBody gwd
+        newBodyFunc render =
+          el H.! attrs $ (bodyFunc render)
+     in gwd { gwdBody = Body newBodyFunc }
+  return a
 
 
 
