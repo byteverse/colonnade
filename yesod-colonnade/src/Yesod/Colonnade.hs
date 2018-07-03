@@ -31,6 +31,7 @@ import Data.Monoid
 import Data.String (IsString(..))
 import Text.Blaze (Attribute,toValue)
 import Data.Foldable
+import Yesod.Elements (table_,thead_,tbody_,tr_,td_,th_,ul_,li_,a_)
 import qualified Text.Blaze.Html5.Attributes as HA
 import qualified Text.Blaze.Html5 as H
 import qualified Colonnade.Encode as E
@@ -41,8 +42,8 @@ import qualified Data.Text.Lazy.Builder as TBuilder
 -- | The attributes that will be applied to a @<td>@ and
 --   the HTML content that will go inside it.
 data Cell site = Cell
-  { cellAttrs :: !Attribute
-  , cellContents :: !(WidgetT site IO ())
+  { cellAttrs :: [Attribute]
+  , cellContents :: !(WidgetFor site ())
   }
 
 instance IsString (Cell site) where
@@ -55,7 +56,7 @@ instance Monoid (Cell site) where
   mappend = (<>)
 
 -- | Create a 'Cell' from a 'Widget'
-cell :: WidgetT site IO () -> Cell site
+cell :: WidgetFor site () -> Cell site
 cell = Cell mempty
 
 -- | Create a 'Cell' from a 'String'
@@ -74,7 +75,7 @@ builderCell = cell . toWidget . toHtml . LText.toStrict . TBuilder.toLazyText
 --   it in an @\<a\>@.
 anchorCell :: 
      (a -> Route site) -- ^ Route that will go in @href@ attribute
-  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
+  -> (a -> WidgetFor site ()) -- ^ Content wrapped by @<a>@ tag
   -> a -- ^ Value
   -> Cell site
 anchorCell getRoute getContent = cell . anchorWidget getRoute getContent
@@ -83,26 +84,26 @@ anchorCell getRoute getContent = cell . anchorWidget getRoute getContent
 --   it in an @\<a\>@.
 anchorWidget :: 
      (a -> Route site) -- ^ Route that will go in @href@ attribute
-  -> (a -> WidgetT site IO ()) -- ^ Content wrapped by @<a>@ tag
+  -> (a -> WidgetFor site ()) -- ^ Content wrapped by @<a>@ tag
   -> a -- ^ Value
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 anchorWidget getRoute getContent a = do
   urlRender <- getUrlRender
-  a_ (HA.href (toValue (urlRender (getRoute a)))) (getContent a)
+  a_ [HA.href (toValue (urlRender (getRoute a)))] (getContent a)
 
 -- | This determines the attributes that are added
 --   to the individual @li@s by concatenating the header\'s
 --   attributes with the data\'s attributes. 
 encodeListItems :: 
-     (WidgetT site IO () -> WidgetT site IO ())
+     (WidgetFor site () -> WidgetFor site ())
      -- ^ Wrapper for items, often @ul@
-  -> (WidgetT site IO () -> WidgetT site IO () -> WidgetT site IO ())
+  -> (WidgetFor site () -> WidgetFor site () -> WidgetFor site ())
      -- ^ Combines header with data
   -> Colonnade Headed a (Cell site)
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 encodeListItems ulWrap combine enc =
   ulWrap . E.bothMonadic_ enc
     (\(Cell ha hc) (Cell ba bc) ->
@@ -113,16 +114,16 @@ encodeListItems ulWrap combine enc =
 --   first column and the data displayed in the second column. Note
 --   that the generated HTML table does not have a @thead@.
 encodeDefinitionTable ::
-     Attribute
+     [Attribute]
      -- ^ Attributes of @table@ element.
   -> Colonnade Headed a (Cell site)
      -- ^ How to encode data as a row
   -> a
      -- ^ The value to display
-  -> WidgetT site IO ()
-encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $ 
+  -> WidgetFor site ()
+encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ [] $ 
   E.bothMonadic_ enc
-    (\theKey theValue -> tr_ mempty $ do
+    (\theKey theValue -> tr_ [] $ do
       widgetFromCell td_ theKey
       widgetFromCell td_ theValue
     ) a
@@ -133,19 +134,19 @@ encodeDefinitionTable attrs enc a = table_ attrs $ tbody_ mempty $
 --
 --   > encodeCellTable (HA.class_ "table table-striped") ...
 encodeCellTable :: (Foldable f, E.Headedness h)
-  => Attribute -- ^ Attributes of @table@ element
+  => [Attribute] -- ^ Attributes of @table@ element
   -> Colonnade h a (Cell site) -- ^ How to encode data as a row
   -> f a -- ^ Rows of data
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 encodeCellTable = encodeTable
   (E.headednessPure mempty) mempty (const mempty) widgetFromCell 
 
 -- | Encode an html table.
 encodeWidgetTable :: (Foldable f, E.Headedness h)
-  => Attribute -- ^ Attributes of @\<table\>@ element
-  -> Colonnade h a (WidgetT site IO ()) -- ^ How to encode data as columns
+  => [Attribute] -- ^ Attributes of @\<table\>@ element
+  -> Colonnade h a (WidgetFor site ()) -- ^ How to encode data as columns
   -> f a -- ^ Rows of data
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 encodeWidgetTable = encodeTable
   (E.headednessPure mempty) mempty (const mempty) ($ mempty) 
 
@@ -154,14 +155,14 @@ encodeWidgetTable = encodeTable
 --   used to add attributes to the generated @\<tr\>@ elements.
 encodeTable ::
      (Foldable f, E.Headedness h)
-  => h Attribute -- ^ Attributes of @\<thead\>@, pass 'Nothing' to omit @\<thead\>@
-  -> Attribute -- ^ Attributes of @\<tbody\>@ element
-  -> (a -> Attribute) -- ^ Attributes of each @\<tr\>@ element
-  -> ((Attribute -> WidgetT site IO () -> WidgetT site IO ()) -> c -> WidgetT site IO ()) -- ^ Wrap content and convert to 'Html'
-  -> Attribute -- ^ Attributes of @\<table\>@ element
+  => h [Attribute] -- ^ Attributes of @\<thead\>@
+  -> [Attribute] -- ^ Attributes of @\<tbody\>@ element
+  -> (a -> [Attribute]) -- ^ Attributes of each @\<tr\>@ element
+  -> (([Attribute] -> WidgetFor site () -> WidgetFor site ()) -> c -> WidgetFor site ()) -- ^ Wrap content and convert to 'Html'
+  -> [Attribute] -- ^ Attributes of @\<table\>@ element
   -> Colonnade h a c -- ^ How to encode data as a row
   -> f a -- ^ Collection of data
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 encodeTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
   table_ tableAttrs $ do
     for_ E.headednessExtract $ \unhead ->
@@ -172,35 +173,9 @@ encodeTable theadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
         tr_ (trAttrs x) (E.rowMonadic_ colonnade (wrapContent td_) x)
 
 widgetFromCell ::
-  (Attribute -> WidgetT site IO () -> WidgetT site IO ())
+     ([Attribute] -> WidgetFor site () -> WidgetFor site ())
   -> Cell site
-  -> WidgetT site IO ()
+  -> WidgetFor site ()
 widgetFromCell f (Cell attrs contents) =
   f attrs contents
-
-tr_,tbody_,thead_,table_,td_,th_,ul_,li_,a_ ::
-  Attribute -> WidgetT site IO () -> WidgetT site IO ()
-
-table_ = liftParent H.table
-thead_ = liftParent H.thead
-tbody_ = liftParent H.tbody
-tr_ = liftParent H.tr
-td_ = liftParent H.td
-th_ = liftParent H.th
-ul_ = liftParent H.ul
-li_ = liftParent H.li
-a_ = liftParent H.a
-
-liftParent :: (Html -> Html) -> Attribute -> WidgetT site IO a -> WidgetT site IO a
-liftParent el attrs (WidgetFor f) = WidgetFor $ \hdata -> do
-  a <- f hdata
-  modifyIORef' (wdRef hdata) $ \gwd ->
-    let Body bodyFunc = gwdBody gwd
-        newBodyFunc render =
-          el H.! attrs $ (bodyFunc render)
-     in gwd { gwdBody = Body newBodyFunc }
-  return a
-
-
-
 
