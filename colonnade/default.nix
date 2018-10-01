@@ -1,6 +1,6 @@
 { frontend ? false }:
 let
-  pname = "reflex-dom-colonnade"; 
+  pname = "colonnade"; 
   main = (import ../nix/default.nix {
     inherit frontend;
   });
