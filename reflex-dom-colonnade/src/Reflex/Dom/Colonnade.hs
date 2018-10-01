@@ -41,6 +41,7 @@ module Reflex.Dom.Colonnade
   , sectioned
   , paginated
   , paginatedExpandable
+  , paginatedExpandableLazy
   , paginatedCapped
     -- * Cell Functions
   , cell
@@ -56,29 +57,29 @@ module Reflex.Dom.Colonnade
   , semUiFixedPagination
   ) where
 
+import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice,Headedness(..))
+import Control.Applicative (liftA2)
+import Control.Monad (forM)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Trans.Reader (ReaderT)
+import Data.Foldable (Foldable(..),for_,forM_,foldlM)
+import Data.Map.Strict (Map)
+import Data.Monoid (Sum(..))
+import Data.Proxy
+import Data.Semigroup (Semigroup(..))
 import Data.String (IsString(..))
+import Data.Text (Text)
+import Data.Traversable (for)
+import Data.Vector (Vector)
+import Reflex.Dom
+import qualified Colonnade as C
+import qualified Colonnade.Encode as E
+import qualified Data.Map.Strict as M
+import qualified Data.Profunctor as PF
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as LT
-import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
-import qualified Data.Profunctor as PF
-import Data.Map.Strict (Map)
-import Data.Vector (Vector)
-import Data.Text (Text)
-import Data.Foldable (Foldable(..),for_,forM_,foldlM)
-import Data.Traversable (for)
-import Data.Semigroup (Semigroup(..))
-import Control.Applicative (liftA2)
-import Reflex.Dom
-import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice,Headedness(..))
-import Data.Monoid (Sum(..))
-import Data.Proxy
-import Control.Monad.Fix (MonadFix)
-import Control.Monad (forM)
-import Control.Monad.Trans.Reader (ReaderT)
-import qualified Colonnade as C
-import qualified Colonnade.Encode as E
 
 data Cell t m b = Cell
   { cellAttrs :: !(Dynamic t (M.Map T.Text T.Text))
@@ -171,11 +172,13 @@ class Sizable t b h | h -> b where
   sizableSize :: h a -> Dynamic t Int
   sizableCast :: Proxy t -> h a -> b a
 
--- instance (Headedness h, Reflex t) => Headedness (Resizable t h) where
---   headednessPure = Resizable (pure 1) . headednessPure
---   headednessContents = do
---     f <- headednessContents
---     Just (\(Resizable _ a) -> f a)
+instance (Headedness h, Reflex t) => Headedness (Resizable t h) where
+  headednessPure = Resizable (pure 1) . headednessPure
+  headednessExtract = do
+    f <- headednessExtract
+    Just (\(Resizable _ a) -> f a)
+  headednessExtractForall = headednessExtractForall
+
 
 instance (Headedness h, Reflex t) => Sizable t h (Resizable t h) where
   sizableSize = resizableSize
@@ -475,7 +478,7 @@ cappedResizableTableless headAttrs bodyAttrs trAttrs fascia cornice collection =
   bodyResizableLazy (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
   return (E.size annCornice)
 
-cappedTableless :: 
+cappedTableless :: forall t b h m f e c p a.
      (Headedness b, Sizable t b h, MonadWidget t m, Foldable f, Monoid e, Cellular t m c)
   => Dynamic t (Map Text Text) -- ^ @\<thead\>@ tag attributes
   -> Dynamic t (Map Text Text) -- ^ @\<tbody\>@ tag attributes
@@ -485,13 +488,14 @@ cappedTableless ::
   -> f a -- ^ Collection of data
   -> m (Dynamic t Int)
 cappedTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
-  let annCornice = dynamicAnnotateGeneral cornice
+  let annCornice :: E.AnnotatedCornice (Dynamic t Int) b p a (c e)
+      annCornice = dynamicAnnotateGeneral cornice
   _ <- encodeCorniceHeadGeneral headAttrs fascia annCornice
   bodyResizableLazy bodyAttrs trAttrs
     (C.mapHeadedness sizedToResizable (E.uncapAnnotated annCornice))
     collection
   return (E.size annCornice)
- 
+
 sizedToResizable :: E.Sized (Dynamic t Int) h a -> Resizable t h a
 sizedToResizable (E.Sized sz h) = Resizable sz h
 
@@ -803,7 +807,6 @@ paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Paginati
             makePagination totalPages
       return ()
     _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
-      
 
 -- | A paginated table with a fixed number of rows. Each row can
 --   expand a section beneath it, represented as an additional
@@ -853,13 +856,62 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
           elDynAttr "th" attrs $ do
             makePagination totalPages
       return ()
-    _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
+    _ -> error "Reflex.Dom.Colonnade: paginatedExpandable: write this code"
 
+-- | A paginated table with a fixed number of rows. Each row can
+--   expand a section beneath it, represented as an additional
+--   table row. CSS rules that give the table a striped appearance
+--   are unlikely to work since there are hidden rows.
+paginatedExpandableLazy :: forall t b h m a c.
+     (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, Functor c, MonadHold t m, MonadWidget t m, Headedness h, h ~ b)
+  => Bureau t b a -- ^ table class settings
+  -> Pagination t m -- ^ pagination settings
+  -> a -- ^ An inhabitant of type @a@ only used for the cells in hidden rows.
+  -> (Dynamic t a -> m ()) -- expandable extra content
+  -> Colonnade (Resizable t h) (Dynamic t a) (c (Dynamic t Bool))
+     -- ^ Column blueprint. The boolean event enables and disables the expansion.
+  -> Dynamic t (Vector a) -- ^ table row data
+  -> m ()
+paginatedExpandableLazy (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize arrange makePagination) aDef expansion col vecD = do
+  let colLifted :: Colonnade (Resizable t h) (Dynamic t (Visible a)) (c (Dynamic t Bool))
+      colLifted = PF.lmap (fmap (\(Visible _ a) -> a)) col
+      expansionLifted :: Dynamic t (Visible a) -> m ()
+      expansionLifted = expansion . fmap (\(Visible _ a) -> a)
+      makeVals :: Dynamic t Int -> Vector (Dynamic t (Visible a))
+      makeVals page = V.generate pageSize $ \ix -> do
+        p <- page
+        v <- vecD
+        pure (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+      totalPages :: Dynamic t Int
+      totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
+      hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
+      hideWhenUnipage = zipDynWith
+        ( \ct attrs -> if ct > 1 then attrs else M.insert "style" "display:none;" attrs
+        ) totalPages
+      trAttrsLifted :: Dynamic t (Visible a) -> Dynamic t (Map Text Text)
+      trAttrsLifted d = do
+        Visible isVisible a <- d
+        attrs <- trAttrs a
+        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+      size :: Dynamic t Int
+      size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
+  elDynAttr "table" tableAttrs $ case arrange of
+    ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
+      tableHeader theadAttrs colLifted
+      let vals = makeVals page
+      tableBodyExpandableLazy size expansionLifted bodyAttrs trAttrsLifted colLifted vals (Visible True aDef)
+      page <- elDynAttr "tfoot" (hideWhenUnipage tfootAttrs) $ do
+        elDynAttr "tr" tfootTrAttrs $ do
+          let attrs = zipDynWith insertSizeAttr size tfootThAttrs
+          elDynAttr "th" attrs $ do
+            makePagination totalPages
+      return ()
+    _ -> error "Reflex.Dom.Colonnade: paginatedExpandableLazy: write this code"
  
 divRoundUp :: Int -> Int -> Int
 divRoundUp a b = case divMod a b of
   (x,y) -> if y == 0 then x else x + 1
-    
+
 tableHeader :: forall t b h c a m x.
      (Reflex t, Sizable t b h, Cellular t m c, Headedness b)
   => b (Dynamic t (Map Text Text), Dynamic t (Map Text Text))
@@ -875,7 +927,7 @@ tableHeader theadAttrsWrap col = case headednessExtractForall of
     where
     extract :: forall y. b y -> y
     extract = E.runExtractForall extractForall
-    
+
 tableBody :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e, Cellular t m c, Sizable t b h)
   => Dynamic t (M.Map T.Text T.Text)
   -> (a -> Dynamic t (M.Map T.Text T.Text))
@@ -887,6 +939,29 @@ tableBody bodyAttrs trAttrs col collection =
       e <- elDynAttr "tr" (trAttrs a) (rowSizable col a)
       return (mappend m e)
     ) mempty collection
+
+tableBodyExpandableLazy :: forall t m c b a h. (Headedness h, MonadFix m, DomBuilder t m, MonadHold t m, PostBuild t m, Cellular t m c, Sizable t b h)
+  => Dynamic t Int -- ^ number of visible columns in the table
+  -> (Dynamic t a -> m ())
+  -> Dynamic t (Map Text Text)
+  -> (Dynamic t a -> Dynamic t (Map Text Text))
+  -> Colonnade (Resizable t h) (Dynamic t a) (c (Dynamic t Bool))
+  -> Vector (Dynamic t a)
+  -> a -- ^ initial value, a hack
+  -> m ()
+tableBodyExpandableLazy colCount renderExpansion bodyAttrs trAttrs colonnade collection a0 = do
+  let sizeVec = V.map (resizableSize . E.oneColonnadeHead) (E.getColonnade colonnade)
+  let sizeVecD = fmap V.fromList (distributeListOverDynPure (V.toList sizeVec))
+  sizeVec0 <- sample (current sizeVecD)
+  largestSizes <- foldDynMaybe
+    ( \incoming largest ->
+      let v = V.zipWith max incoming largest
+       in if v == largest then Nothing else Just v
+    ) sizeVec0 (updated sizeVecD)
+  _ <- dyn $ flip fmap largestSizes $ \s -> do
+    let colonnade' = E.Colonnade (V.map snd (V.filter (\(sz,_) -> sz > 0) (V.zip s (E.getColonnade colonnade))))
+    tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs colonnade' collection a0
+  return ()
 
 -- | This function has a implementation that is careful to only
 --   redraw the expansion rows, which are usually hidden, when
