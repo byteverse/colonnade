@@ -311,7 +311,7 @@ bodyResizableLazy bodyAttrs trAttrs colonnade collection = do
   _ <- dyn $ flip fmap largestSizes $ \s -> do
     let colonnade' = E.Colonnade (V.map snd (V.filter (\(sz,_) -> sz > 0) (V.zip s (E.getColonnade colonnade))))
     bodyResizable bodyAttrs trAttrs colonnade' collection
-  return ()
+  pure ()
 
 setColspanOrHide :: Int -> Map Text Text -> Map Text Text
 setColspanOrHide i m
@@ -434,7 +434,7 @@ capped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
   elAttr "table" tableAttrs $ do
     h <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
     b <- body (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
-    return (h `mappend` b)
+    pure (h `mappend` b)
 
 -- | This is useful when you want to be able to toggle the visibility
 --   of columns after the table has been built. In additon to the
@@ -459,7 +459,7 @@ cappedResizable tableAttrs headAttrs bodyAttrs beneathBody trAttrs fascia cornic
     _ <- encodeCorniceResizableHead headAttrs fascia annCornice
     bodyResizableLazy (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
     c <- beneathBody
-    return (c, E.size annCornice)
+    pure (c, E.size annCornice)
 
 -- | Same as 'cappedResizable' but without the @\<table\>@ wrapping it.
 --   Also, it does not take extra content to go beneath the @\<tbody\>@.
@@ -476,7 +476,7 @@ cappedResizableTableless headAttrs bodyAttrs trAttrs fascia cornice collection =
   let annCornice = dynamicAnnotate cornice
   _ <- encodeCorniceResizableHead headAttrs fascia annCornice
   bodyResizableLazy (pure bodyAttrs) (pure . trAttrs) (E.discard cornice) collection
-  return (E.size annCornice)
+  pure (E.size annCornice)
 
 cappedTableless :: forall t b h m f e c p a.
      (Headedness b, Sizable t b h, MonadWidget t m, Foldable f, Monoid e, Cellular t m c)
@@ -494,7 +494,7 @@ cappedTableless headAttrs bodyAttrs trAttrs fascia cornice collection = do
   bodyResizableLazy bodyAttrs trAttrs
     (C.mapHeadedness sizedToResizable (E.uncapAnnotated annCornice))
     collection
-  return (E.size annCornice)
+  pure (E.size annCornice)
 
 sizedToResizable :: E.Sized (Dynamic t Int) h a -> Resizable t h a
 sizedToResizable (E.Sized sz h) = Resizable sz h
@@ -563,7 +563,7 @@ cappedTraversing tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collectio
   elAttr "table" tableAttrs $ do
     _ <- encodeCorniceHead headAttrs fascia (E.annotate cornice)
     b <- bodyTraversing bodyAttrs trAttrs (E.discard cornice) collection
-    return b
+    pure b
 
 dynamicBody :: (DomBuilder t m, PostBuild t m, Foldable f, Semigroup e, Monoid e)
   => Dynamic t (M.Map T.Text T.Text)
@@ -646,11 +646,11 @@ expandable tableAttrs tdExpandedAttrs as encoding@(E.Colonnade v) = do
         elist <- E.rowMonadicWith [] (++) encoding (fmap (\k -> [k]) . elFromCell "td") a
         let e = leftmost elist
             e' = flip fmap e $ \mwidg -> case mwidg of
-              Nothing -> return ()
+              Nothing -> pure ()
               Just widg -> el "tr" $ do
                 elDynAttr "td" (M.insert "colspan" (T.pack (show vlen)) <$> tdExpandedAttrs) widg
-        return e'
-      widgetHold (return ()) e'
+        pure e'
+      widgetHold (pure ()) e'
 
 -- expandableResizableTableless :: forall t m f a b. (MonadWidget t m, Foldable f)
 --   => f a -- ^ Values
@@ -691,7 +691,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       makeVals page = V.generate pageSize $ \ix -> do
         p <- page
         v <- vecD
-        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+        pure (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
@@ -702,7 +702,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
       trAttrsLifted d = do
         Visible isVisible a <- d
         attrs <- trAttrs a
-        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+        pure (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
       size :: Dynamic t Int
       size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
@@ -715,15 +715,15 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return e
+      pure e
     _ -> error "Reflex.Dom.Colonnade: paginated: write this code"
 
 -- dynAfter :: forall t m a b. MonadWidget t m => Event t a -> (Dynamic t a -> m (Event t b)) -> m (Event t b)
 -- dynAfter e f = do
 --   e1 <- headE e
 --   let em1 = fmap (\a1 -> holdDyn a1 e >>= f) e1
---   de <- widgetHold (return never) em1
---   return (switch (current de))
+--   de <- widgetHold (pure never) em1
+--   pure (switch (current de))
 
 -- paginatedCappedLazy :: forall t b h m a c p e.
 --      (Sizable t b h, Cellular t m c, Headedness b, MonadFix m, Functor h, MonadHold t m, Monoid e)
@@ -744,7 +744,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
 --         makeVals page = V.generate pageSize $ \ix -> do
 --           p <- page
 --           v <- vecD
---           return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+--           pure (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
 --         totalPages :: Dynamic t Int
 --         totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
 --         hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
@@ -755,7 +755,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
 --         trAttrsLifted d = do
 --           Visible isVisible a <- d
 --           attrs <- trAttrs a
---           return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+--           pure (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
 --     elDynAttr "table" tableAttrs $ case arrange of
 --       ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
 --         let vals = makeVals page
@@ -765,7 +765,7 @@ paginated (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination pageSize 
 --             let attrs = zipDynWith insertSizeAttr size tfootThAttrs
 --             elDynAttr "th" attrs $ do
 --               makePagination totalPages
---         return e
+--         pure e
 --       _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
   
 
@@ -784,7 +784,7 @@ paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Paginati
       makeVals page = V.generate pageSize $ \ix -> do
         p <- page
         v <- vecD
-        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+        pure (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
@@ -795,7 +795,7 @@ paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Paginati
       trAttrsLifted d = do
         Visible isVisible a <- d
         attrs <- trAttrs a
-        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+        pure (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
   elDynAttr "table" tableAttrs $ case arrange of
     ArrangementFooter tfootAttrs tfootTrAttrs tfootThAttrs -> mdo
       let vals = makeVals page
@@ -805,7 +805,7 @@ paginatedCapped (Chest tableAttrs theadAttrs fascia bodyAttrs trAttrs) (Paginati
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return ()
+      pure ()
     _ -> error "Reflex.Dom.Colonnade: paginatedCapped: write this code"
 
 -- | A paginated table with a fixed number of rows. Each row can
@@ -831,7 +831,7 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
       makeVals page = V.generate pageSize $ \ix -> do
         p <- page
         v <- vecD
-        return (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
+        pure (maybe (Visible False aDef) (Visible True) (v V.!? (p * pageSize + ix)))
       totalPages :: Dynamic t Int
       totalPages = fmap ((`divRoundUp` pageSize) . V.length) vecD
       hideWhenUnipage :: Dynamic t (Map Text Text) -> Dynamic t (Map Text Text)
@@ -842,7 +842,7 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
       trAttrsLifted d = do
         Visible isVisible a <- d
         attrs <- trAttrs a
-        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+        pure (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
       size :: Dynamic t Int
       size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
@@ -855,7 +855,7 @@ paginatedExpandable (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagination
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return ()
+      pure ()
     _ -> error "Reflex.Dom.Colonnade: paginatedExpandable: write this code"
 
 -- | A paginated table with a fixed number of rows. Each row can
@@ -892,7 +892,7 @@ paginatedExpandableLazy (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagina
       trAttrsLifted d = do
         Visible isVisible a <- d
         attrs <- trAttrs a
-        return (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
+        pure (if isVisible then attrs else M.insertWith T.append "style" "display:none;" attrs)
       size :: Dynamic t Int
       size = coerceDynamic (foldMap (\x -> coerceDynamic (sizableSize (E.oneColonnadeHead x)) :: Dynamic t (Sum Int)) (E.getColonnade col))
   elDynAttr "table" tableAttrs $ case arrange of
@@ -905,7 +905,7 @@ paginatedExpandableLazy (Bureau tableAttrs theadAttrs bodyAttrs trAttrs) (Pagina
           let attrs = zipDynWith insertSizeAttr size tfootThAttrs
           elDynAttr "th" attrs $ do
             makePagination totalPages
-      return ()
+      pure ()
     _ -> error "Reflex.Dom.Colonnade: paginatedExpandableLazy: write this code"
  
 divRoundUp :: Int -> Int -> Int
@@ -918,7 +918,7 @@ tableHeader :: forall t b h c a m x.
   -> Colonnade h a (c x)
   -> m ()
 tableHeader theadAttrsWrap col = case headednessExtractForall of
-  Nothing -> return ()
+  Nothing -> pure ()
   Just extractForall -> do
     let (theadAttrs,trAttrs) = extract theadAttrsWrap
     elDynAttr "thead" theadAttrs $ do
@@ -937,9 +937,10 @@ tableBody :: (DomBuilder t m, PostBuild t m, Foldable f, Monoid e, Cellular t m 
 tableBody bodyAttrs trAttrs col collection =
   elDynAttr "tbody" bodyAttrs $ foldlM (\m a -> do
       e <- elDynAttr "tr" (trAttrs a) (rowSizable col a)
-      return (mappend m e)
+      pure (mappend m e)
     ) mempty collection
 
+-- | As of now, the *expandable* content is only as lazy as tableBodyExpandable is, meaning it is still generated with the initial value.
 tableBodyExpandableLazy :: forall t m c b a h. (Headedness h, MonadFix m, DomBuilder t m, MonadHold t m, PostBuild t m, Cellular t m c, Sizable t b h)
   => Dynamic t Int -- ^ number of visible columns in the table
   -> (Dynamic t a -> m ())
@@ -950,10 +951,12 @@ tableBodyExpandableLazy :: forall t m c b a h. (Headedness h, MonadFix m, DomBui
   -> a -- ^ initial value, a hack
   -> m ()
 tableBodyExpandableLazy colCount renderExpansion bodyAttrs trAttrs colonnade collection a0 = do
-  let sizeVec = V.map (resizableSize . E.oneColonnadeHead) (E.getColonnade colonnade)
-  let sizeVecD = fmap V.fromList (distributeListOverDynPure (V.toList sizeVec))
-  sizeVec0 <- sample (current sizeVecD)
-  largestSizes <- foldDynMaybe
+  let sizeVec :: Vector (Dynamic t Int)
+      sizeVec = V.map (resizableSize . E.oneColonnadeHead) (E.getColonnade colonnade)
+  let sizeVecD :: Dynamic t (Vector Int)
+      sizeVecD = fmap V.fromList (distributeListOverDynPure (V.toList sizeVec))
+  sizeVec0 :: Vector Int <- sample (current sizeVecD)
+  largestSizes :: Dynamic t (Vector Int) <- foldDynMaybe
     ( \incoming largest ->
       let v = V.zipWith max incoming largest
        in if v == largest then Nothing else Just v
@@ -961,7 +964,7 @@ tableBodyExpandableLazy colCount renderExpansion bodyAttrs trAttrs colonnade col
   _ <- dyn $ flip fmap largestSizes $ \s -> do
     let colonnade' = E.Colonnade (V.map snd (V.filter (\(sz,_) -> sz > 0) (V.zip s (E.getColonnade colonnade))))
     tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs colonnade' collection a0
-  return ()
+  pure ()
 
 -- | This function has a implementation that is careful to only
 --   redraw the expansion rows, which are usually hidden, when
@@ -978,8 +981,8 @@ tableBodyExpandable :: forall t m c b a h. (DomBuilder t m, MonadHold t m, PostB
 tableBodyExpandable colCount renderExpansion bodyAttrs trAttrs col collection a0 =
   elDynAttr "tbody" bodyAttrs $ mapM_ (\a -> do
       let attrs = trAttrs a
-      expanded <- elDynAttr "tr" attrs (rowSizableReified (return False) (zipDynWith (||)) col a)
-      visibleVal <- gateDynamic expanded a0 a
+      expanded :: Dynamic t Bool <- elDynAttr "tr" attrs (rowSizableReified (pure False) (zipDynWith (||)) col a)
+      visibleVal :: Dynamic t a <- gateDynamic expanded a0 a
       elDynAttr "tr" (zipDynWith insertVisibilityAttr expanded attrs) $ do
         -- TODO: possibly provide a way to customize these attributes
         let expansionTdAttrs = pure M.empty
@@ -1020,7 +1023,7 @@ rowSizableReified theEmpty theAppend (E.Colonnade v) a = V.foldM (\m oc -> do
         attrs = zipDynWith insertSizeAttr sz (cellularAttrs c)
     e <- elDynAttr "td" attrs $ do
       cellularContents c
-    return (theAppend m e)
+    pure (theAppend m e)
   ) theEmpty v
 
 rowSizable :: (Sizable t b h, Cellular t m c, Monoid e)
@@ -1033,7 +1036,7 @@ rowSizable (E.Colonnade v) a = V.foldM (\m oc -> do
         attrs = zipDynWith insertSizeAttr sz (cellularAttrs c)
     e <- elDynAttr "td" attrs $ do
       cellularContents c
-    return (mappend m e)
+    pure (mappend m e)
   ) mempty v
 
 insertVisibilityAttr :: Bool -> Map Text Text -> Map Text Text
@@ -1061,7 +1064,7 @@ semUiFixedPagination :: MonadWidget t m
 semUiFixedPagination maxPageCount extraClass pageCount = do
   elClass "div" (T.append "ui pagination menu " extraClass) $ mdo
     (bckEl,()) <- elClass' "a" "icon item" $ do
-      elClass "i" "left chevron icon" (return ())
+      elClass "i" "left chevron icon" (pure ())
     let bck = Backward <$ domEvent Click bckEl
     posList <- forM (enumFromTo 0 (maxPageCount - 1)) $ \i -> do
       let attrs = zipDynWith (\ct pg -> M.unionsWith (<>)
@@ -1071,16 +1074,16 @@ semUiFixedPagination maxPageCount extraClass pageCount = do
               ]
             ) pageCount page
       (pageEl, ()) <- elDynAttr' "a" attrs (text (T.pack (show (i + 1))))
-      return (Position i <$ domEvent Click pageEl)
+      pure (Position i <$ domEvent Click pageEl)
     (fwdEl,()) <- elClass' "a" "icon item" $ do
-      elClass "i" "right chevron icon" (return ())
+      elClass "i" "right chevron icon" (pure ())
     let fwd = Forward <$ domEvent Click fwdEl
     let moveEv = leftmost (fwd : bck : (Position 0 <$ updated pageCount) : posList)
     page <- foldDynM (\move oldPage -> case move of
-        Backward -> return (max 0 (oldPage - 1))
+        Backward -> pure (max 0 (oldPage - 1))
         Forward -> do
           nowPageCount <- sample (current pageCount)
-          return (min (nowPageCount - 1) (oldPage + 1))
-        Position updatedPage -> return updatedPage
+          pure (min (nowPageCount - 1) (oldPage + 1))
+        Position updatedPage -> pure updatedPage
       ) 0 moveEv
     holdUniqDyn page
