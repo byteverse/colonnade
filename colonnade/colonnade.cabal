@@ -52,6 +52,10 @@ test-suite test
       base >= 4.7 && <= 5
     , colonnade
     , doctest
+    , semigroupoids
+    , ansi-wl-pprint
+    , QuickCheck
+    , fast-logger
   default-language: Haskell2010
 
 source-repository head

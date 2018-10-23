@@ -33,4 +33,7 @@ siphon-0.8.0-docs/
 .ghc.environment.*
 example
 example.hs
+example1
+example1.hs
 client_session_key.aes
+cabal.project.local

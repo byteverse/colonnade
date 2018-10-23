@@ -37,6 +37,7 @@ module Reflex.Dom.Colonnade
   , dynamic
   , dynamicCapped
   , expandable
+  , expandablePreloaded
   -- , expandableResizableTableless
   , sectioned
   , paginated
@@ -56,29 +57,31 @@ module Reflex.Dom.Colonnade
   , semUiFixedPagination
   ) where
 
+import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice,Headedness(..))
+import Control.Applicative (liftA2)
+import Control.Monad (forM)
+import Control.Monad.Fix (MonadFix)
+import Control.Monad.Trans.Reader (ReaderT)
+import Data.Bool (bool)
+import Data.Foldable (Foldable(..),for_,forM_,foldlM)
+import Data.Map.Strict (Map)
+import Data.Monoid (Sum(..))
+import Data.Proxy
+import Data.Semigroup (Semigroup(..))
 import Data.String (IsString(..))
+import Data.Text (Text)
+import Data.Traversable (for)
+import Data.Vector (Vector)
+import Reflex.Dom
+
+import qualified Colonnade as C
+import qualified Colonnade.Encode as E
+import qualified Data.Map.Strict as M
+import qualified Data.Profunctor as PF
 import qualified Data.Text as T
 import qualified Data.Text.Lazy as LT
 import qualified Data.Text.Lazy.Builder as LT
-import qualified Data.Map.Strict as M
 import qualified Data.Vector as V
-import qualified Data.Profunctor as PF
-import Data.Map.Strict (Map)
-import Data.Vector (Vector)
-import Data.Text (Text)
-import Data.Foldable (Foldable(..),for_,forM_,foldlM)
-import Data.Traversable (for)
-import Data.Semigroup (Semigroup(..))
-import Control.Applicative (liftA2)
-import Reflex.Dom
-import Colonnade (Colonnade,Headed,Headless,Fascia,Cornice,Headedness(..))
-import Data.Monoid (Sum(..))
-import Data.Proxy
-import Control.Monad.Fix (MonadFix)
-import Control.Monad (forM)
-import Control.Monad.Trans.Reader (ReaderT)
-import qualified Colonnade as C
-import qualified Colonnade.Encode as E
 
 data Cell t m b = Cell
   { cellAttrs :: !(Dynamic t (M.Map T.Text T.Text))
@@ -620,6 +623,60 @@ dynamicCapped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
     -- TODO: Figure out what this ignored argument represents and dont ignore it
     _ <- encodeCorniceHeadDynamic headAttrs fascia (E.annotate cornice)
     dynamicBody bodyAttrs trAttrs (E.discard cornice) collection
+
+-- | Start displaying the widget after the first time the event                    
+-- fires. Subsequent fires of the event do not reconstruct the                     
+-- widget. They update it in whatever way the lambda normally does.                
+dynAfter :: MonadWidget t m => Event t a -> (Dynamic t a -> m ()) -> m ()
+dynAfter e f = do
+  e1 <- headE e 
+  let em1 = fmap (\a1 -> holdDyn a1 e >>= f) e1
+  _ <- widgetHold blank em1
+  return ()
+
+-- | Table with cells that can create expanded content between the rows.
+--   The content between the rows is built when the vector changed.
+expandablePreloaded :: forall t m a. MonadWidget t m
+  => Bureau t Headed (M.Map T.Text T.Text)
+     -- ^ Table class settings
+  -> (Dynamic t a -> m ())
+     -- ^ Function to render the content under the row.
+  -> Int
+     -- ^ Number of rows
+  -> Colonnade Headed (Dynamic t a) (m (Event t Bool))
+     -- ^ Encoding into cells with events that can fire to display additional
+     --   content under the row.
+  -> Dynamic t (Vector a)
+     -- ^ Values
+  -> m ()
+expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bodyAttrs _trBuildAttrs) f n colonnade@(E.Colonnade v) xs = do
+  elDynAttr "table" tableAttrs $ do
+    _ <- elDynAttr "thead" theadAttrs $ elDynAttr "tr" theadRowAttrs $ E.headerMonadicGeneral_ colonnade (el "th")
+    ys <- sample (current xs)
+    elDynAttr "tbody" bodyAttrs $ forM_ (enumFromTo 0 (n - 1)) $ \ix -> do
+      let stream = fmapMaybe (V.!? ix) (updated xs)
+      let visible = fmap (\x -> V.length x > ix) xs
+      case ys V.!? ix of
+        Nothing -> dynAfter stream $ \a -> buildRow a visible
+        Just y -> do
+          a <- holdDyn y stream
+          buildRow a visible
+  where
+  vlen = V.length v
+  buildRow :: Dynamic t a -> Dynamic t Bool -> m ()
+  buildRow a visible = do
+    elist <- el "tr" $ E.rowMonadicWith [] (++) colonnade (fmap (\k -> [k]) . el "td") a
+    let e = leftmost elist
+    shouldDisplay1 <- foldDyn const False e
+    let shouldDisplay2 = zipDynWith (&&) shouldDisplay1 visible
+    el "tr" $ do
+      let attrs = fmap
+            ( bool
+              (M.fromList [("style","display:none;")])
+              (M.fromList [("colspan",T.pack (show vlen))])
+            ) shouldDisplay2
+      elDynAttr "td" attrs (f a)
+    
 
 -- | Table with cells that can create expanded content
 --   between the rows.

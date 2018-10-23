@@ -79,6 +79,15 @@ tests =
                 ]
               )
             ) @?= ([(244,intToWord8 (ord 'z'),True)] :> Nothing)
+    , testCase "Headed Decoding (geolite)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeCsvUtf8 decodingGeolite
+              ( SMP.yield $ BC8.pack $ concat
+                [ "network,autonomous_system_number,autonomous_system_organization\n"
+                , "1,z,y\n"
+                ]
+              )
+            ) @?= ([(1,intToWord8 (ord 'z'),intToWord8 (ord 'y'))] :> Nothing)
     , testCase "Headed Decoding (escaped characters, one big chunk)"
         $ ( runIdentity . SMP.toList )
             ( S.decodeCsvUtf8 decodingF
@@ -148,6 +157,12 @@ decodingB = (,,)
 
 decodingF :: Siphon Headed ByteString ByteString
 decodingF = S.headed "name" Just
+
+decodingGeolite :: Siphon Headed ByteString (Int,Word8,Word8)
+decodingGeolite = (,,)
+  <$> S.headed "network" dbInt
+  <*> S.headed "autonomous_system_number" dbWord8
+  <*> S.headed "autonomous_system_organization" dbWord8
 
 
 encodingA :: Colonnade Headless (Int,Char,Bool) ByteString
