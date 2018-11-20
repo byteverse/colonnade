@@ -631,33 +631,33 @@ dynamicCapped tableAttrs headAttrs bodyAttrs trAttrs fascia cornice collection =
 -- | Start displaying the widget after the first time the event                    
 -- fires. Subsequent fires of the event do not reconstruct the                     
 -- widget. They update it in whatever way the lambda normally does.                
-dynAfter :: MonadWidget t m => Event t a -> (Dynamic t a -> m ()) -> m ()
+dynAfter :: MonadWidget t m => Event t a -> (Dynamic t a -> m (Event t e)) -> m (Event t e)
 dynAfter e f = do
   e1 <- headE e 
   let em1 = fmap (\a1 -> holdDyn a1 e >>= f) e1
-  _ <- widgetHold blank em1
-  return ()
+  -- This use of switchPromptlyDyn might be dubious. Rethink this.
+  fmap switchPromptlyDyn (widgetHold (pure never) em1)
 
 -- | Table with cells that can create expanded content between the rows.
 --   The content between the rows is built when the vector changed.
-expandablePreloaded :: forall t m a. MonadWidget t m
+expandablePreloaded :: forall t m e a. (MonadWidget t m, Semigroup e)
   => Bureau t Headed (M.Map T.Text T.Text)
      -- ^ Table class settings
   -> (Dynamic t a -> m ())
      -- ^ Function to render the content under the row.
   -> Int
      -- ^ Number of rows
-  -> Colonnade Headed (Dynamic t a) (m (Event t Bool))
+  -> Colonnade Headed (Dynamic t a) (m (Event t Bool, Event t e))
      -- ^ Encoding into cells with events that can fire to display additional
      --   content under the row.
   -> Dynamic t (Vector a)
      -- ^ Values
-  -> m ()
+  -> m (Event t e)
 expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bodyAttrs _trBuildAttrs) f n colonnade@(E.Colonnade v) xs = do
   elDynAttr "table" tableAttrs $ do
     _ <- elDynAttr "thead" theadAttrs $ elDynAttr "tr" theadRowAttrs $ E.headerMonadicGeneral_ colonnade (el "th")
     ys <- sample (current xs)
-    elDynAttr "tbody" bodyAttrs $ forM_ (enumFromTo 0 (n - 1)) $ \ix -> do
+    es <- elDynAttr "tbody" bodyAttrs $ forM (enumFromTo 0 (n - 1)) $ \ix -> do
       let stream = fmapMaybe (V.!? ix) (updated xs)
       let visible = fmap (\x -> V.length x > ix) xs
       case ys V.!? ix of
@@ -665,13 +665,15 @@ expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bod
         Just y -> do
           a <- holdDyn y stream
           buildRow a visible
+    pure (mconcat es)
   where
   vlen = V.length v
-  buildRow :: Dynamic t a -> Dynamic t Bool -> m ()
+  buildRow :: Dynamic t a -> Dynamic t Bool -> m (Event t e)
   buildRow a visible = do
     elist <- el "tr" $ E.rowMonadicWith [] (++) colonnade (fmap (\k -> [k]) . el "td") a
-    let e = leftmost elist
-    shouldDisplay1 <- foldDyn const False e
+    let b = leftmost (map fst elist)
+    let e = map snd elist
+    shouldDisplay1 <- foldDyn const False b
     let shouldDisplay2 = zipDynWith (&&) shouldDisplay1 visible
     el "tr" $ do
       let attrs = fmap
@@ -680,6 +682,7 @@ expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bod
               (M.fromList [("colspan",T.pack (show vlen))])
             ) shouldDisplay2
       elDynAttr "td" attrs (f a)
+      pure (mconcat e)
     
 
 -- | Table with cells that can create expanded content
