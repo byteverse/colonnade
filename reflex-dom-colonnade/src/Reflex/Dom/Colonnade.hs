@@ -655,7 +655,8 @@ expandablePreloaded :: forall t m e a. (MonadWidget t m, Semigroup e)
   -> m (Event t e)
 expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bodyAttrs _trBuildAttrs) f n colonnade@(E.Colonnade v) xs = do
   elDynAttr "table" tableAttrs $ do
-    _ <- elDynAttr "thead" theadAttrs $ elDynAttr "tr" theadRowAttrs $ E.headerMonadicGeneral_ colonnade (el "th")
+    (_,ds) <- elDynAttr "thead" theadAttrs $ elDynAttr "tr" theadRowAttrs $ do
+      E.headerMonadicGeneral colonnade (fmap (\(x,y) -> ([x],[y])) . el "th")
     ys <- sample (current xs)
     es <- elDynAttr "tbody" bodyAttrs $ forM (enumFromTo 0 (n - 1)) $ \ix -> do
       let stream = fmapMaybe (V.!? ix) (updated xs)
@@ -665,7 +666,7 @@ expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bod
         Just y -> do
           a <- holdDyn y stream
           buildRow a visible
-    pure (mconcat es)
+    pure (mconcat (mconcat ds : es))
   where
   vlen = V.length v
   buildRow :: Dynamic t a -> Dynamic t Bool -> m (Event t e)
