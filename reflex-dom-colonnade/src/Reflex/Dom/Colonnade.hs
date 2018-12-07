@@ -671,7 +671,7 @@ expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bod
   vlen = V.length v
   buildRow :: Dynamic t a -> Dynamic t Bool -> m (Event t e)
   buildRow a visible = do
-    elist <- el "tr" $ E.rowMonadicWith [] (++) colonnade (fmap (\k -> [k]) . el "td") a
+    elist <- elDynAttr "tr" (fmap (bool hidden M.empty) visible) $ E.rowMonadicWith [] (++) colonnade (fmap (\k -> [k]) . el "td") a
     let b = leftmost (map fst elist)
     let e = map snd elist
     shouldDisplay1 <- foldDyn const False b
@@ -679,12 +679,14 @@ expandablePreloaded (Bureau tableAttrs (E.Headed (theadAttrs,theadRowAttrs)) bod
     el "tr" $ do
       let attrs = fmap
             ( bool
-              (M.fromList [("style","display:none;")])
+              hidden
               (M.fromList [("colspan",T.pack (show vlen))])
             ) shouldDisplay2
       elDynAttr "td" attrs (f a)
       pure (mconcat e)
-    
+
+hidden :: Map Text Text
+hidden = M.singleton "style" "display:none;"
 
 -- | Table with cells that can create expanded content
 --   between the rows.
