@@ -119,6 +119,15 @@ encodeCellTable ::
 encodeCellTable = encodeTable
   (E.headednessPure ([],[])) mempty (const mempty) htmlFromCell
 
+encodeCellTableSized :: 
+     (E.Headedness h, Foldable f, Monoid d)
+  => [Attribute] -- ^ Attributes of @\<table\>@ element
+  -> Colonnade (E.Sized Int h) a (Cell d) -- ^ How to encode data as columns
+  -> f a -- ^ Collection of data
+  -> Html ()
+encodeCellTableSized = encodeTableSized
+  (E.headednessPure ([],[])) mempty (const mempty) htmlFromCell
+
 -- | Encode a table. This handles a very general case and
 --   is seldom needed by users. One of the arguments provided is
 --   used to add attributes to the generated @\<tr\>@ elements.
@@ -163,12 +172,12 @@ encodeBody trAttrs wrapContent tbodyAttrs colonnade xs = do
 
 encodeBodySized ::
      (Foldable f, Monoid d)
-  => [Attribute]
-  -> (a -> [Attribute]) 
+  => (a -> [Attribute]) 
+  -> [Attribute]
   -> Colonnade (E.Sized Int h) a (Cell d) 
   -> f a
   -> Html ()
-encodeBodySized bodyAttrs trAttrs colonnade collection = tbody_ bodyAttrs $ do
+encodeBodySized trAttrs tbodyAttrs colonnade collection = tbody_ tbodyAttrs $ do
   flip foldMap collection $ \a -> tr_ (trAttrs a) $ do
     E.rowMonoidalHeader 
       colonnade 
@@ -176,6 +185,30 @@ encodeBodySized bodyAttrs trAttrs colonnade collection = tbody_ bodyAttrs $ do
         void $ td_ (setColspanOrHide sz cattr) content
       )
       a
+
+encodeTableSized :: forall f h a d c.
+     (Foldable f, E.Headedness h, Monoid d)
+  => h ([Attribute],[Attribute]) -- ^ Attributes of @\<thead\>@ and its @\<tr\>@
+  -> [Attribute] -- ^ Attributes of @\<tbody\>@ element
+  -> (a -> [Attribute]) -- ^ Attributes of each @\<tr\>@ element
+  -> (([Attribute] -> Html d -> Html d) -> (Cell d) -> Html d) -- ^ Wrap content and convert to 'Html'
+  -> [Attribute] -- ^ Attributes of @\<table\>@ element
+  -> Colonnade (E.Sized Int h) a (Cell d) -- ^ How to encode data as a row
+  -> f a -- ^ Collection of data
+  -> Html ()
+encodeTableSized mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
+  table_ tableAttrs $ do
+    d1 <- case E.headednessExtractForall of
+      Nothing -> return mempty
+      Just extractForall -> do
+        let (theadAttrs,theadTrAttrs) = extract mtheadAttrs
+        thead_ theadAttrs $ tr_ theadTrAttrs $ do
+          foldlMapM' (wrapContent th_ . extract . (\(E.Sized _ h) -> h) . E.oneColonnadeHead) (E.getColonnade colonnade)
+        where
+        extract :: forall y. h y -> y
+        extract = E.runExtractForall extractForall
+    encodeBodySized trAttrs tbodyAttrs colonnade xs
+    pure ()
 
 setColspanOrHide :: Int -> [Attribute] -> [Attribute]
 setColspanOrHide i attrs
