@@ -1,6 +1,7 @@
 {-# LANGUAGE BangPatterns #-}
 {-# LANGUAGE ScopedTypeVariables #-}
 {-# LANGUAGE TypeFamilies #-}
+{-# LANGUAGE OverloadedStrings #-}
 
 -- | Build HTML tables using @lucid@ and @colonnade@. It is
 --   recommended that users read the documentation for @colonnade@ first,
@@ -38,6 +39,7 @@ import Data.Maybe (listToMaybe)
 import Data.Char (isSpace)
 import Control.Applicative (liftA2)
 import Lucid
+import qualified Colonnade as Col
 import qualified Data.List as List
 import qualified Colonnade.Encode as E
 import qualified Data.Text as Text
@@ -157,6 +159,27 @@ encodeBody trAttrs wrapContent tbodyAttrs colonnade xs = do
   tbody_ tbodyAttrs $ do
     flip foldlMapM' xs $ \x -> do
       tr_ (trAttrs x) $ E.rowMonadic colonnade (wrapContent td_) x
+
+encodeBodySized ::
+     (Foldable f, Monoid d)
+  => [Attribute]
+  -> (a -> [Attribute]) 
+  -> Colonnade (E.Sized Int h) a (Cell d) 
+  -> f a
+  -> Html ()
+encodeBodySized bodyAttrs trAttrs colonnade collection = tbody_ bodyAttrs $ do
+  flip foldMap collection $ \a -> tr_ (trAttrs a) $ do
+    E.rowMonoidalHeader 
+      colonnade 
+      (\(E.Sized sz _) (Cell cattr content) -> 
+        void $ td_ (setColspanOrHide sz cattr) content
+      )
+      a
+
+setColspanOrHide :: Int -> [Attribute] -> [Attribute]
+setColspanOrHide i attrs
+  | i < 1 = style_ "display:none;" : attrs
+  | otherwise = colspan_ (Text.pack (show i)) : attrs
 
 foldlMapM' :: forall g b a m. (Foldable g, Monoid b, Monad m) => (a -> m b) -> g a -> m b
 foldlMapM' f xs = foldr f' pure xs mempty
