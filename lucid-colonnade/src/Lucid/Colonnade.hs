@@ -14,6 +14,7 @@ module Lucid.Colonnade
   ( -- * Apply
     encodeHtmlTable
   , encodeCellTable
+  , encodeCellTableSized
   , encodeTable
     -- * Cell
     -- $build
