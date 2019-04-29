@@ -200,11 +200,23 @@ encodeTableSized :: forall f h a d c.
 encodeTableSized mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade xs =
   table_ tableAttrs $ do
     d1 <- case E.headednessExtractForall of
-      Nothing -> return mempty
+      Nothing -> pure mempty
       Just extractForall -> do
         let (theadAttrs,theadTrAttrs) = extract mtheadAttrs
         thead_ theadAttrs $ tr_ theadTrAttrs $ do
-          foldlMapM' (wrapContent th_ . extract . (\(E.Sized _ h) -> h) . E.oneColonnadeHead) (E.getColonnade colonnade)
+          foldlMapM' 
+            (wrapContent th_ . extract . 
+              (\(E.Sized i h) -> case E.headednessExtract of 
+                  Just f -> 
+                      let (Cell attrs content) = f h 
+                       in E.headednessPure $ Cell (setColspanOrHide i attrs) content
+                  Nothing -> E.headednessPure mempty
+                  -- (E.Headed (Cell attrs content)) -> E.Headed $ Cell (setColspanOrHide i attrs) content
+                  -- E.Headless -> E.Headless
+              )
+              . E.oneColonnadeHead
+            )
+            (E.getColonnade colonnade)
         where
         extract :: forall y. h y -> y
         extract = E.runExtractForall extractForall
