@@ -24,6 +24,7 @@ module Lucid.Colonnade
   , lazyTextCell
   , builderCell
   , htmlFromCell
+  , encodeBodySized
     -- * Discussion
     -- $discussion
   ) where
