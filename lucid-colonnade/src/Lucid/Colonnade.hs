@@ -26,6 +26,7 @@ module Lucid.Colonnade
   , builderCell
   , htmlFromCell
   , encodeBodySized
+  , sectioned
     -- * Discussion
     -- $discussion
   ) where
