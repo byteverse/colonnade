@@ -40,13 +40,15 @@ import Data.String (IsString(..))
 import Data.Maybe (listToMaybe)
 import Data.Char (isSpace)
 import Control.Applicative (liftA2)
-import Lucid
+import Lucid hiding (for_)
 import qualified Colonnade as Col
 import qualified Data.List as List
 import qualified Colonnade.Encode as E
 import qualified Data.Text as Text
 import qualified Data.Text.Lazy as LText
 import qualified Data.Text.Lazy.Builder as TBuilder
+import qualified Data.Vector as V
+import qualified Data.Text as T
 
 -- $build
 --
@@ -264,4 +266,28 @@ htmlFromCell f (Cell attr content) = f attr content
 -- situation, it is necessary to introduce 'Cell', which includes
 -- the possibility of attributes on the parent node.
 
+sectioned :: 
+  (Foldable f, E.Headedness h, Foldable g, Monoid c)
+  => [Attribute] -- ^ @\<table\>@ tag attributes
+  -> Maybe ([Attribute], [Attribute])
+  -- ^ Attributes of @\<thead\>@ and its @\<tr\>@, pass 'Nothing' to omit @\<thead\>@
+  -> [Attribute] -- ^ @\<tbody\>@ tag attributes
+  -> (a -> [Attribute]) -- ^ @\<tr\>@ tag attributes for data rows
+  -> (b -> Cell c) -- ^ Section divider encoding strategy
+  -> Colonnade h a (Cell c) -- ^ Data encoding strategy
+  -> f (b, g a) -- ^ Collection of data
+  -> Html ()
+sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Colonnade v) collection = do
+  pure ()
+  let vlen = V.length v
+  table_ tableAttrs $ do
+    for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
+      thead_ headAttrs . tr_ headTrAttrs $
+        E.headerMonadicGeneral_ colonnade (htmlFromCell th_)
+    tbody_ bodyAttrs $ forM_ collection $ \(b,as) -> do
+      let Cell attrs contents = dividerContent b
+      tr_ [] $ do
+        td_ ((colspan_ $ T.pack (show vlen)): attrs) contents
+      flip foldlMapM' as $ \a -> do
+        tr_ (trAttrs a) $ E.rowMonadic colonnade (htmlFromCell td_) a
 
