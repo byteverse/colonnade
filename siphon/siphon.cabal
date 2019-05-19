@@ -25,7 +25,7 @@ library
     , vector
     , streaming >= 0.1.4 && < 0.3
     , attoparsec
-    , transformers >= 0.5 && < 0.6
+    , transformers >= 0.4.2 && < 0.6
     , semigroups >= 0.18.2 && < 0.20
   default-language: Haskell2010
 
