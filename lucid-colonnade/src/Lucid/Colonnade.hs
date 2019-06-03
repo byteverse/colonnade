@@ -182,7 +182,7 @@ encodeBodySized ::
   -> f a
   -> Html ()
 encodeBodySized trAttrs tbodyAttrs colonnade collection = tbody_ tbodyAttrs $ do
-  flip foldMap collection $ \a -> tr_ (trAttrs a) $ do
+  for_ collection $ \a -> tr_ (trAttrs a) $ do
     E.rowMonoidalHeader 
       colonnade 
       (\(E.Sized sz _) (Cell cattr content) -> 
@@ -207,7 +207,7 @@ encodeTableSized mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade
       Just extractForall -> do
         let (theadAttrs,theadTrAttrs) = extract mtheadAttrs
         thead_ theadAttrs $ tr_ theadTrAttrs $ do
-          foldlMapM' 
+          traverse_
             (wrapContent th_ . extract . 
               (\(E.Sized i h) -> case E.headednessExtract of 
                   Just f -> 
@@ -224,7 +224,6 @@ encodeTableSized mtheadAttrs tbodyAttrs trAttrs wrapContent tableAttrs colonnade
         extract :: forall y. h y -> y
         extract = E.runExtractForall extractForall
     encodeBodySized trAttrs tbodyAttrs colonnade xs
-    pure ()
 
 setColspanOrHide :: Int -> [Attribute] -> [Attribute]
 setColspanOrHide i attrs
@@ -279,16 +278,15 @@ sectioned ::
   -> f (b, g a) -- ^ Collection of data
   -> Html ()
 sectioned tableAttrs mheadAttrs bodyAttrs trAttrs dividerContent colonnade@(E.Colonnade v) collection = do
-  pure ()
   let vlen = V.length v
   table_ tableAttrs $ do
     for_ mheadAttrs $ \(headAttrs,headTrAttrs) ->
       thead_ headAttrs . tr_ headTrAttrs $
         E.headerMonadicGeneral_ colonnade (htmlFromCell th_)
-    tbody_ bodyAttrs $ forM_ collection $ \(b,as) -> do
+    tbody_ bodyAttrs $ for_ collection $ \(b,as) -> do
       let Cell attrs contents = dividerContent b
       tr_ [] $ do
         td_ ((colspan_ $ T.pack (show vlen)): attrs) contents
-      flip foldlMapM' as $ \a -> do
+      flip traverse_ as $ \a -> do
         tr_ (trAttrs a) $ E.rowMonadic colonnade (htmlFromCell td_) a
 
