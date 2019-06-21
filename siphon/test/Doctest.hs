@@ -2,6 +2,7 @@ import Test.DocTest
 
 main :: IO ()
 main = doctest
-  [ "src/Siphon.hs"
+  [ "-isrc"
+  , "src/Siphon.hs"
   ]
 
