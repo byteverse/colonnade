@@ -388,7 +388,11 @@ escapedField = do
   trailChar <- case mb of
     Just b
       | b == comma -> A.anyWord8 >> return TrailCharComma
-      | b == newline || b == cr -> A.anyWord8 >> return TrailCharNewline
+      | b == newline -> A.anyWord8 >> return TrailCharNewline
+      | b == cr -> do
+          _ <- A.anyWord8
+          _ <- A.word8 newline
+          return TrailCharNewline
       | otherwise -> fail "encountered double quote after escaped field"
     Nothing -> return TrailCharEnd
   if doubleQuote `S.elem` s
@@ -412,7 +416,11 @@ unescapedField !delim = do
   case mb of
     Just b
       | b == comma -> A.anyWord8 >> return (bs,TrailCharComma)
-      | b == newline || b == cr -> A.anyWord8 >> return (bs,TrailCharNewline)
+      | b == newline -> A.anyWord8 >> return (bs,TrailCharNewline)
+      | b == cr -> do
+          _ <- A.anyWord8
+          _ <- A.word8 newline
+          return (bs,TrailCharNewline)
       | otherwise -> fail "encountered double quote in unescaped field"
     Nothing -> return (bs,TrailCharEnd)
 
