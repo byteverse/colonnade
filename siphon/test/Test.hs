@@ -108,6 +108,16 @@ tests =
                 ]
               )
             ) @?= (["drew","martin, drew"] :> Nothing)
+    , testCase "Headed Decoding (escaped characters, character per chunk, CRLF)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeCsvUtf8 decodingF
+              ( mapM_ (SMP.yield . BC8.singleton) $ concat
+                [ "name\r\n"
+                , "drew\r\n"
+                , "\"martin, drew\"\r\n"
+                ]
+              )
+            ) @?= (["drew","martin, drew"] :> Nothing)
     , testProperty "Headed Isomorphism (int,char,bool)"
         $ propIsoStream BC8.unpack
           (S.decodeCsvUtf8 decodingB)
