@@ -18,6 +18,8 @@ module Siphon
   , encodeCsvStreamUtf8
     -- * Decode CSV
   , decodeCsvUtf8
+  , decodeHeadedCsvUtf8
+  , decodeIndexedCsvUtf8
     -- * Build Siphon
   , headed
   , headless
@@ -81,11 +83,19 @@ data Ended = EndedYes | EndedNo
 data CellResult c = CellResultData !c | CellResultNewline !c !Ended
   deriving (Show)
 
-decodeCsvUtf8 :: Monad m 
+-- | Backwards-compatibility alias for 'decodeHeadedCsvUtf8'.
+decodeCsvUtf8 :: Monad m
   => Siphon CE.Headed ByteString a
   -> Stream (Of ByteString) m () -- ^ encoded csv
   -> Stream (Of a) m (Maybe SiphonError)
-decodeCsvUtf8 headedSiphon s1 = do
+decodeCsvUtf8 = decodeHeadedCsvUtf8
+
+-- | Decode a CSV whose first row is contains headers identify each column.
+decodeHeadedCsvUtf8 :: Monad m
+  => Siphon CE.Headed ByteString a
+  -> Stream (Of ByteString) m () -- ^ encoded csv
+  -> Stream (Of a) m (Maybe SiphonError)
+decodeHeadedCsvUtf8 headedSiphon s1 = do
   e <- lift (consumeHeaderRowUtf8 s1)
   case e of
     Left err -> return (Just err)
@@ -94,6 +104,15 @@ decodeCsvUtf8 headedSiphon s1 = do
       Right ixedSiphon -> do
         let requiredLength = V.length v
         consumeBodyUtf8 1 requiredLength ixedSiphon s2
+
+-- | Decode a CSV without a header.
+decodeIndexedCsvUtf8 :: Monad m
+  => Int -- ^ How many columns are there? This number should be greater than any indices referenced by the scheme.
+  -> Siphon Indexed ByteString a
+  -> Stream (Of ByteString) m () -- ^ encoded csv
+  -> Stream (Of a) m (Maybe SiphonError)
+decodeIndexedCsvUtf8 !requiredLength ixedSiphon s1 = do
+  consumeBodyUtf8 0 requiredLength ixedSiphon s1
 
 encodeCsvStreamUtf8 :: (Monad m, CE.Headedness h)
   => CE.Colonnade h a ByteString
@@ -222,11 +241,6 @@ encodeRows escapeFunc separatorStr newlineStr colonnade = mapStreamM $ \a -> do
     SMP.yield (getEscaped (escapeFunc (encode a)))
   SMP.yield newlineStr
 
-data IndexedHeader a = IndexedHeader
-  { indexedHeaderIndexed :: {-# UNPACK #-} !Int
-  , indexedHeaderHeader :: !a
-  } 
-
 -- | Maps over a 'Decolonnade' that expects headers, converting these
 --   expected headers into the indices of the columns that they
 --   correspond to.
@@ -234,7 +248,7 @@ headedToIndexed :: forall c a. Eq c
   => (c -> T.Text)
   -> Vector c -- ^ Headers in the source document
   -> Siphon CE.Headed c a -- ^ Decolonnade that contains expected headers
-  -> Either SiphonError (Siphon IndexedHeader c a)
+  -> Either SiphonError (Siphon Indexed c a)
 headedToIndexed toStr v =
     mapLeft (\(HeaderErrors a b c) -> SiphonError 0 (RowErrorHeaders a b c)) 
   . getEitherWrap
@@ -242,7 +256,7 @@ headedToIndexed toStr v =
   where
   go :: forall b.
         Siphon CE.Headed c b
-     -> EitherWrap HeaderErrors (Siphon IndexedHeader c b)
+     -> EitherWrap HeaderErrors (Siphon Indexed c b)
   go (SiphonPure b) = EitherWrap (Right (SiphonPure b))
   go (SiphonAp (CE.Headed h) decode apNext) =
     let rnext = go apNext
@@ -254,7 +268,7 @@ headedToIndexed toStr v =
           | otherwise =
               let dups = V.singleton (V.map (\ix -> CellError ix (toStr (v V.! ix) {- (V.unsafeIndex v ix) -} )) ixs)
                in Left (HeaderErrors dups V.empty V.empty)
-    in (\ix nextSiphon -> SiphonAp (IndexedHeader ix h) decode nextSiphon)
+    in (\ix nextSiphon -> SiphonAp (Indexed ix) decode nextSiphon)
        <$> EitherWrap rcurrent
        <*> rnext
 
@@ -444,10 +458,6 @@ unescape = (LByteString.toStrict . toLazyByteString) <$!> go mempty where
       then return (acc `mappend` byteString h)
       else rest
 
--- | Is this an empty record (i.e. a blank line)?
-blankLine :: V.Vector B.ByteString -> Bool
-blankLine v = V.length v == 1 && (B.null (V.head v))
-
 doubleQuote, newline, cr, comma :: Word8
 doubleQuote = 34
 newline = 10
@@ -551,7 +561,7 @@ consumeHeaderRowUtf8 = consumeHeaderRow (A.parse (field comma)) B.null B.empty (
 consumeBodyUtf8 :: forall m a. Monad m
   => Int -- ^ index of first row, usually zero or one
   -> Int -- ^ Required row length
-  -> Siphon IndexedHeader ByteString a
+  -> Siphon Indexed ByteString a
   -> Stream (Of ByteString) m ()
   -> Stream (Of a) m (Maybe SiphonError)
 consumeBodyUtf8 = consumeBody utf8ToStr
@@ -608,7 +618,7 @@ consumeBody :: forall m r c a. Monad m
   -> (r -> Bool) -- ^ True if termination is acceptable. False if it is because of a decoding error.
   -> Int -- ^ index of first row, usually zero or one
   -> Int -- ^ Required row length
-  -> Siphon IndexedHeader c a
+  -> Siphon Indexed c a
   -> Stream (Of c) m r
   -> Stream (Of a) m (Maybe SiphonError)
 consumeBody toStr parseCell isNull emptyStr isGood row0 reqLen siphon s0 =
@@ -701,7 +711,7 @@ data StrictList a = StrictListNil | StrictListCons !a !(StrictList a)
 uncheckedRunWithRow ::
      (c -> T.Text)
   -> Int
-  -> Siphon IndexedHeader c a
+  -> Siphon Indexed c a
   -> Vector c
   -> Either SiphonError a
 uncheckedRunWithRow toStr i d v =
@@ -713,16 +723,16 @@ uncheckedRunWithRow toStr i d v =
 --   out of the bounds.
 uncheckedRun :: forall c a.
      (c -> T.Text)
-  -> Siphon IndexedHeader c a
+  -> Siphon Indexed c a
   -> Vector c
   -> Either (Vector CellError) a
 uncheckedRun toStr dc v = getEitherWrap (go dc)
   where
   go :: forall b.
-        Siphon IndexedHeader c b
+        Siphon Indexed c b
      -> EitherWrap (Vector CellError) b
   go (SiphonPure b) = EitherWrap (Right b)
-  go (SiphonAp (IndexedHeader ix _) decode apNext) =
+  go (SiphonAp (Indexed ix) decode apNext) =
     let rnext = go apNext
         content = v V.! ix -- V.unsafeIndex v ix
         rcurrent = maybe
@@ -730,19 +740,6 @@ uncheckedRun toStr dc v = getEitherWrap (go dc)
           Right
           (decode content)
     in rnext <*> (EitherWrap rcurrent)
-
-siphonLength :: forall f c a. Siphon f c a -> Int
-siphonLength = go 0 where
-  go :: forall b. Int -> Siphon f c b -> Int
-  go !a (SiphonPure _) = a
-  go !a (SiphonAp _ _ apNext) = go (a + 1) apNext
-
-maxIndex :: forall c a. Siphon IndexedHeader c a -> Int
-maxIndex = go 0 where
-  go :: forall b. Int -> Siphon IndexedHeader c b -> Int
-  go !ix (SiphonPure _) = ix
-  go !ix1 (SiphonAp (IndexedHeader ix2 _) _ apNext) =
-    go (max ix1 ix2) apNext
 
 -- | Uses the argument to parse a CSV column.
 headless :: (c -> Maybe a) -> Siphon CE.Headless c a
