@@ -1,6 +1,6 @@
 cabal-version: 3.0
 name: siphon
-version: 0.8.1.2
+version: 0.8.2.0
 synopsis: Encode and decode CSV files
 description: Please see README.md
 homepage: https://github.com/andrewthad/colonnade#readme
