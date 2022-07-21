@@ -75,7 +75,7 @@ instance Semigroup d => Semigroup (Cell d) where
 
 instance Monoid d => Monoid (Cell d) where
   mempty = Cell mempty (return mempty)
-  mappend (Cell a1 c1) (Cell a2 c2) = Cell (mappend a1 a2) (liftA2 mappend c1 c2)
+  mappend = (<>)
 
 -- | Create a 'Cell' from a 'Widget'
 htmlCell :: Html d -> Cell d
