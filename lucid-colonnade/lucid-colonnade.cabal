@@ -20,7 +20,7 @@ library
       base >= 4.8 && < 5
     , colonnade >= 1.1.1 && < 1.3
     , lucid >= 2.9 && < 3.0
-    , text >= 1.2 && < 1.3
+    , text >= 1.2 && < 2.1
     , vector >= 0.10 && < 0.13
   default-language: Haskell2010
 
