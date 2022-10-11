@@ -28,8 +28,12 @@ module Siphon
   , Siphon
   , SiphonError(..)
   , Indexed(..)
+    -- * For Testing
+  , headedToIndexed
     -- * Utility
   , humanizeSiphonError
+  , eqSiphonHeaders
+  , showSiphonHeaders
     -- * Imports
     -- $setup
   ) where
@@ -38,6 +42,7 @@ import Siphon.Types
 import Data.Monoid
 import Control.Applicative
 import Control.Monad
+import Data.Functor.Classes (Eq1,Show1,liftEq,showsPrec1)
 
 import qualified Data.ByteString.Char8 as BC8
 import qualified Data.Attoparsec.ByteString as A
@@ -263,7 +268,7 @@ headedToIndexed toStr v =
         ixs = V.elemIndices h v
         ixsLen = V.length ixs
         rcurrent
-          | ixsLen == 1 = Right (ixs V.! 0) -- (V.unsafeIndex ixs 0)
+          | ixsLen == 1 = Right (ixs V.! 0)
           | ixsLen == 0 = Left (HeaderErrors V.empty (V.singleton (toStr h)) V.empty)
           | otherwise =
               let dups = V.singleton (V.map (\ix -> CellError ix (toStr (v V.! ix) {- (V.unsafeIndex v ix) -} )) ixs)
@@ -679,13 +684,13 @@ reverseVectorStrictList len sl0 = V.create $ do
   return mv
   where
   go1 :: forall s. MVector s c -> ST s ()
-  go1 !mv = go2 0 sl0
+  go1 !mv = go2 (len - 1) sl0
     where
     go2 :: Int -> StrictList c -> ST s ()
     go2 _ StrictListNil = return ()
     go2 !ix (StrictListCons c slNext) = do
       MV.write mv ix c
-      go2 (ix + 1) slNext
+      go2 (ix - 1) slNext
 
 
 skipWhile :: forall m a r. Monad m
@@ -704,6 +709,8 @@ skipWhile f = go where
         else return e
 
 -- | Strict in the spine and in the values
+-- This is built in reverse and then reversed by reverseVectorStrictList
+-- when converting to a vector.
 data StrictList a = StrictListNil | StrictListCons !a !(StrictList a)
 
 -- | This function uses 'unsafeIndex' to access
@@ -754,6 +761,16 @@ headed h f = SiphonAp (CE.Headed h) f (SiphonPure id)
 --   is positioned at the index given by the first argument.
 indexed :: Int -> (c -> Maybe a) -> Siphon Indexed c a
 indexed ix f = SiphonAp (Indexed ix) f (SiphonPure id)
+
+eqSiphonHeaders :: (Eq1 f, Eq c) => Siphon f c a -> Siphon f c b -> Bool
+eqSiphonHeaders (SiphonPure _) (SiphonPure _) = True
+eqSiphonHeaders (SiphonAp h0 _ s0) (SiphonAp h1 _ s1) =
+  liftEq (==) h0 h1 && eqSiphonHeaders s0 s1
+eqSiphonHeaders _ _ = False
+
+showSiphonHeaders :: (Show1 f, Show c) => Siphon f c a -> String
+showSiphonHeaders (SiphonPure _) = ""
+showSiphonHeaders (SiphonAp h0 _ s0) = showsPrec1 10 h0 (" :> " ++ showSiphonHeaders s0)
 
 -- $setup
 --

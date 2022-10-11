@@ -4,33 +4,35 @@
 
 module Main (main) where
 
-import Test.QuickCheck (Gen, Arbitrary(..), choose, elements, Property)
-import Test.QuickCheck.Property (Result, succeeded, exception)
-import Test.HUnit (Assertion,(@?=))
-import Test.Framework (defaultMain, testGroup, Test)
-import Test.Framework.Providers.QuickCheck2 (testProperty)
-import Test.Framework.Providers.HUnit (testCase)
+import Colonnade (headed,headless,Colonnade,Headed,Headless)
+import Control.Exception
 import Data.ByteString (ByteString)
-import Data.Text (Text)
-import GHC.Generics (Generic)
+import Data.Char (ord)
 import Data.Either.Combinators
-import Siphon.Types
-import Data.Functor.Identity
 import Data.Functor.Contravariant           (contramap)
 import Data.Functor.Contravariant.Divisible (divided,conquered)
-import Colonnade (headed,headless,Colonnade,Headed,Headless)
+import Data.Functor.Identity
 import Data.Profunctor (lmap)
-import Streaming (Stream,Of(..))
-import Control.Exception
-import Debug.Trace
+import Data.Text (Text)
 import Data.Word (Word8)
-import Data.Char (ord)
+import Debug.Trace
+import GHC.Generics (Generic)
+import Siphon.Types
+import Streaming (Stream,Of(..))
+import Test.Framework (defaultMain, testGroup, Test)
+import Test.Framework.Providers.HUnit (testCase)
+import Test.Framework.Providers.QuickCheck2 (testProperty)
+import Test.HUnit (Assertion,(@?=))
+import Test.QuickCheck (Gen, Arbitrary(..), choose, elements, Property)
+import Test.QuickCheck.Property (Result, succeeded, exception)
+
 import qualified Data.Text as Text
 import qualified Data.ByteString.Builder as Builder
 import qualified Data.ByteString.Lazy as LByteString
 import qualified Data.ByteString as ByteString
 import qualified Data.ByteString.Char8 as BC8
 import qualified Data.ByteString as B
+import qualified Data.Vector as Vector
 import qualified Colonnade as Colonnade
 import qualified Siphon as S
 import qualified Streaming.Prelude as SMP
@@ -118,6 +120,30 @@ tests =
                 ]
               )
             ) @?= (["drew","martin, drew"] :> Nothing)
+    , testCase "headedToIndexed" $
+        let actual = S.headedToIndexed id (Vector.fromList ["letter","boolean","number"]) decodingG
+         in case actual of
+              Left e -> fail "headedToIndexed failed"
+              Right actualInner -> 
+                let expected = SiphonAp (Indexed 2 :: Indexed Text) (\_ -> Nothing)
+                             $ SiphonAp (Indexed 0 :: Indexed Text) (\_ -> Nothing)
+                             $ SiphonAp (Indexed 1 :: Indexed Text) (\_ -> Nothing)
+                             $ SiphonPure (\_ _ _ -> ())
+                 in case S.eqSiphonHeaders actualInner expected of
+                      True -> pure ()
+                      False -> fail $
+                        "Expected " ++
+                        S.showSiphonHeaders expected ++
+                        " but got " ++
+                        S.showSiphonHeaders actualInner
+    , testCase "Indexed Decoding (int,char,bool)"
+        $ ( runIdentity . SMP.toList )
+            ( S.decodeIndexedCsvUtf8 3 indexedDecodingB
+              ( mapM_ (SMP.yield . BC8.singleton) $ concat
+                [ "244,z,true\n"
+                ]
+              )
+            ) @?= ([(244,intToWord8 (ord 'z'),True)] :> Nothing)
     , testProperty "Headed Isomorphism (int,char,bool)"
         $ propIsoStream BC8.unpack
           (S.decodeCsvUtf8 decodingB)
@@ -164,6 +190,18 @@ decodingB = (,,)
   <$> S.headed "number" dbInt
   <*> S.headed "letter" dbWord8
   <*> S.headed "boolean" dbBool
+
+indexedDecodingB :: Siphon Indexed ByteString (Int,Word8,Bool)
+indexedDecodingB = (,,)
+  <$> S.indexed 0 dbInt
+  <*> S.indexed 1 dbWord8
+  <*> S.indexed 2 dbBool
+
+decodingG :: Siphon Headed Text ()
+decodingG =
+  S.headed "number" (\_ -> Nothing)
+  <* S.headed "letter" (\_ -> Nothing)
+  <* S.headed "boolean" (\_ -> Nothing)
 
 decodingF :: Siphon Headed ByteString ByteString
 decodingF = S.headed "name" Just
