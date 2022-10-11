@@ -36,20 +36,21 @@ test-suite test
   main-is: Test.hs
   build-depends:
       base
-    , either
-    , siphon
+    , HUnit
+    , QuickCheck
+    , bytestring
     , colonnade
     , contravariant
-    , test-framework
-    , test-framework-quickcheck2
-    , QuickCheck
-    , text
-    , bytestring
+    , either
     , pipes
-    , HUnit
-    , test-framework-hunit
     , profunctors
+    , siphon
     , streaming
+    , test-framework
+    , test-framework-hunit
+    , test-framework-quickcheck2
+    , text
+    , vector
   default-language: Haskell2010
 
 source-repository head

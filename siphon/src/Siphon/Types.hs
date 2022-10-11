@@ -15,6 +15,7 @@ module Siphon.Types
 import Data.Vector (Vector)
 import Control.Exception (Exception)
 import Data.Text (Text)
+import Data.Functor.Classes (Eq1,Show1,liftEq,liftShowsPrec)
 
 data CellError = CellError
   { cellErrorColumn :: !Int
@@ -24,6 +25,12 @@ data CellError = CellError
 newtype Indexed a = Indexed
   { indexedIndex :: Int
   } deriving (Eq,Ord,Functor,Show,Read)
+
+instance Show1 Indexed where
+  liftShowsPrec _ _ p (Indexed i) s = showsPrec p i s
+
+instance Eq1 Indexed where
+  liftEq _ (Indexed i) (Indexed j) = i == j
 
 data SiphonError = SiphonError
   { siphonErrorRow :: !Int
