@@ -2,3 +2,4 @@ packages: ./colonnade
           ./blaze-colonnade
           ./lucid-colonnade
           ./siphon
+          ./yesod-colonnade
