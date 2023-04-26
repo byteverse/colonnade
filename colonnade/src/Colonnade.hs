@@ -95,7 +95,7 @@ import qualified Data.Vector as Vector
 -- >>> let showDollar = (('$':) . show) :: Int -> String
 -- >>> colHouse = mconcat [headed "Color" (show . color), headed "Price" (showDollar . price)]
 -- >>> :t colHouse
--- colHouse :: Colonnade Headed House [Char]
+-- colHouse :: Colonnade Headed House String
 -- >>> let houses = [House Green 170000, House Blue 115000, House Green 150000]
 -- >>> putStr (ascii colHouse houses)
 -- +-------+---------+
@@ -179,10 +179,10 @@ fromMaybe c (E.Colonnade v) = E.Colonnade $ flip Vector.map v $
 -- >>> let allColors = [Red,Green,Blue]
 -- >>> let encColor = columns (\c1 c2 -> if c1 == c2 then "✓" else "") (Headed . show) allColors
 -- >>> :t encColor
--- encColor :: Colonnade Headed Color [Char]
+-- encColor :: Colonnade Headed Color String
 -- >>> let encHouse = headed "Price" (showDollar . price) <> lmap color encColor
 -- >>> :t encHouse
--- encHouse :: Colonnade Headed House [Char]
+-- encHouse :: Colonnade Headed House String
 -- >>> putStr (ascii encHouse houses)
 -- +---------+-----+-------+------+
 -- | Price   | Red | Green | Blue |
@@ -274,7 +274,7 @@ replaceWhen = modifyWhen . const
 --   
 --   >>> let cor = mconcat [cap "Person" colPersonFst, cap "House" colHouseSnd]
 --   >>> :t cor
---   cor :: Cornice Headed ('Cap 'Base) (Person, House) [Char]
+--   cor :: Cornice Headed ('Cap 'Base) (Person, House) String
 --   >>> putStr (asciiCapped cor personHomePairs)
 --   +-------------+-----------------+
 --   | Person      | House           |
