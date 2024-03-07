@@ -1,6 +1,9 @@
-name: colonnade
-version: 1.2.0.2
-synopsis: Generic types and functions for columnar encoding and decoding
+cabal-version:   3.0
+name:            colonnade
+version:         1.2.0.3
+synopsis:
+  Generic types and functions for columnar encoding and decoding
+
 description:
   The `colonnade` package provides a way to talk about
   columnar encodings and decodings of data. This package provides
@@ -19,32 +22,39 @@ description:
   * <https://hackage.haskell.org/package/yesod-colonnade yesod-colonnade> for `yesod` widgets
   .
   * <http://hackage.haskell.org/package/siphon siphon> for encoding and decoding CSVs
-homepage: https://github.com/andrewthad/colonnade#readme
-license: BSD3
-license-file: LICENSE
-author: Andrew Martin
-maintainer: andrew.thaddeus@gmail.com
-copyright: 2016 Andrew Martin
-category: web
-build-type: Simple
-cabal-version: >=1.10
+
+homepage:        https://github.com/byteverse/colonnade
+bug-reports:     https://github.com/byteverse/colonnade/issues
+license:         BSD-3-Clause
+license-file:    LICENSE
+author:          Andrew Martin
+maintainer:      amartin@layer3com.com
+copyright:       2016 Andrew Martin
+category:        web
+build-type:      Simple
+extra-doc-files:
+  CHANGELOG.md
+  README.md
+
+tested-with:     GHC ==9.4.8 || ==9.6.3 || ==9.8.1
+
+common build-settings
+  default-language: Haskell2010
+  ghc-options:      -Wall -Wunused-packages
+  build-depends:    base >=4.12 && <5
 
 library
-  hs-source-dirs:      src
+  import:          build-settings
+  ghc-options:     -O2
+  hs-source-dirs:  src
   exposed-modules:
     Colonnade
     Colonnade.Encode
+
   build-depends:
-      base >= 4.12 && < 5
-    , contravariant >= 1.2 && < 1.6
-    , vector >= 0.10 && < 0.14
-    , text >= 1.0 && < 2.1
-    , bytestring >= 0.10 && < 0.12
-    , profunctors >= 5.0 && < 5.7
-    , semigroups >= 0.18.2 && < 0.21
-  default-language:    Haskell2010
-  ghc-options: -Wall
+    , profunctors  >=5.0
+    , vector       >=0.10
 
 source-repository head
   type:     git
-  location: https://github.com/andrewthad/colonnade
+  location: git://github.com/byteverse/colonnade.git
