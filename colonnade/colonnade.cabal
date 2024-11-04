@@ -38,7 +38,7 @@ library
       base >= 4.12 && < 5
     , contravariant >= 1.2 && < 1.6
     , vector >= 0.10 && < 0.14
-    , text >= 1.0 && < 2.1
+    , text >= 1.0 && < 2.2
     , bytestring >= 0.10 && < 0.12
     , profunctors >= 5.0 && < 5.7
     , semigroups >= 0.18.2 && < 0.21
